@@ -18,9 +18,6 @@ import (
 const (
 	modePassphraseLabel = "Passphrase"
 	modeRandomLabel     = "Random password"
-
-	languageNorwegianLabel = "Norwegian"
-	languageEnglishLabel   = "English"
 )
 
 type UI struct {
@@ -143,7 +140,7 @@ func newSettingsForm() *settingsForm {
 
 	return &settingsForm{
 		mode:      widget.NewSelect([]string{modePassphraseLabel, modeRandomLabel}, nil),
-		language:  widget.NewSelect([]string{languageNorwegianLabel, languageEnglishLabel}, nil),
+		language:  widget.NewSelect(languageLabels(), nil),
 		minLength: minLength,
 		maxLength: maxLength,
 		lowercase: widget.NewCheck("Lowercase", nil),
@@ -230,15 +227,22 @@ func modeFromLabel(label string) password.Mode {
 }
 
 func labelForLanguage(language password.Language) string {
-	if language == password.LanguageEnglish {
-		return languageEnglishLabel
-	}
-	return languageNorwegianLabel
+	return password.LabelForLanguage(language)
 }
 
 func languageFromLabel(label string) password.Language {
-	if label == languageEnglishLabel {
-		return password.LanguageEnglish
+	language, ok := password.LanguageForLabel(label)
+	if ok {
+		return language
 	}
 	return password.LanguageNorwegian
+}
+
+func languageLabels() []string {
+	options := password.SupportedLanguages()
+	labels := make([]string, len(options))
+	for i, option := range options {
+		labels[i] = option.Label
+	}
+	return labels
 }

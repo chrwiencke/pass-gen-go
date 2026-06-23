@@ -28,8 +28,53 @@ func TestGenerateShapeLengthCapitalizationAndASCII(t *testing.T) {
 }
 
 func TestWordListIsLowercasePlainASCIIAndLarge(t *testing.T) {
-	assertWordList(t, "norwegian", norwegianWords, 1000)
-	assertWordList(t, "english", englishWords, 250)
+	minWordsByLanguage := map[Language]int{
+		LanguageNorwegian: 1000,
+		LanguageEnglish:   250,
+	}
+
+	labels := map[string]bool{}
+	for _, option := range SupportedLanguages() {
+		if option.Label == "" {
+			t.Fatalf("language %q has an empty label", option.Language)
+		}
+		if labels[option.Label] {
+			t.Fatalf("duplicate language label %q", option.Label)
+		}
+		labels[option.Label] = true
+
+		if got, ok := LanguageForLabel(option.Label); !ok || got != option.Language {
+			t.Fatalf("LanguageForLabel(%q) = %q, %v; want %q, true", option.Label, got, ok, option.Language)
+		}
+
+		minWords := 60
+		if configuredMin, ok := minWordsByLanguage[option.Language]; ok {
+			minWords = configuredMin
+		}
+		assertWordList(t, string(option.Language), wordsForLanguage(option.Language), minWords)
+	}
+}
+
+func TestGenerateSupportedLanguagePassphrases(t *testing.T) {
+	for _, option := range SupportedLanguages() {
+		t.Run(string(option.Language), func(t *testing.T) {
+			settings := DefaultSettings()
+			settings.Language = option.Language
+
+			for i := 0; i < 25; i++ {
+				pw, err := GenerateWithSettings(settings)
+				if err != nil {
+					t.Fatalf("GenerateWithSettings() returned error: %v", err)
+				}
+				if len(pw) < settings.MinLength || len(pw) > settings.MaxLength {
+					t.Fatalf("password %q length is %d, want between %d and %d", pw, len(pw), settings.MinLength, settings.MaxLength)
+				}
+				if !isPlainASCII(pw) {
+					t.Fatalf("password %q is not plain ASCII", pw)
+				}
+			}
+		})
+	}
 }
 
 func TestGeneratePassphraseHonorsCustomShortLength(t *testing.T) {

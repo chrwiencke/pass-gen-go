@@ -30,9 +30,45 @@ const (
 type Language string
 
 const (
-	LanguageNorwegian Language = "norwegian"
-	LanguageEnglish   Language = "english"
+	LanguageCzech      Language = "czech"
+	LanguageDanish     Language = "danish"
+	LanguageDutch      Language = "dutch"
+	LanguageEnglish    Language = "english"
+	LanguageFinnish    Language = "finnish"
+	LanguageFrench     Language = "french"
+	LanguageGerman     Language = "german"
+	LanguageHungarian  Language = "hungarian"
+	LanguageItalian    Language = "italian"
+	LanguageNorwegian  Language = "norwegian"
+	LanguagePolish     Language = "polish"
+	LanguagePortuguese Language = "portuguese"
+	LanguageRomanian   Language = "romanian"
+	LanguageSpanish    Language = "spanish"
+	LanguageSwedish    Language = "swedish"
 )
+
+type LanguageOption struct {
+	Language Language
+	Label    string
+}
+
+var supportedLanguages = []LanguageOption{
+	{Language: LanguageCzech, Label: "Czech"},
+	{Language: LanguageDanish, Label: "Danish"},
+	{Language: LanguageDutch, Label: "Dutch"},
+	{Language: LanguageEnglish, Label: "English"},
+	{Language: LanguageFinnish, Label: "Finnish"},
+	{Language: LanguageFrench, Label: "French"},
+	{Language: LanguageGerman, Label: "German"},
+	{Language: LanguageHungarian, Label: "Hungarian"},
+	{Language: LanguageItalian, Label: "Italian"},
+	{Language: LanguageNorwegian, Label: "Norwegian"},
+	{Language: LanguagePolish, Label: "Polish"},
+	{Language: LanguagePortuguese, Label: "Portuguese"},
+	{Language: LanguageRomanian, Label: "Romanian"},
+	{Language: LanguageSpanish, Label: "Spanish"},
+	{Language: LanguageSwedish, Label: "Swedish"},
+}
 
 type Settings struct {
 	Mode      Mode     `json:"mode"`
@@ -80,7 +116,7 @@ func (s Settings) Validate() error {
 	if s.Mode != ModePassphrase && s.Mode != ModeRandom {
 		return fmt.Errorf("unsupported password mode %q", s.Mode)
 	}
-	if s.Language != LanguageNorwegian && s.Language != LanguageEnglish {
+	if !isSupportedLanguage(s.Language) {
 		return fmt.Errorf("unsupported passphrase language %q", s.Language)
 	}
 	if s.MinLength < MinAllowedLength {
@@ -112,6 +148,30 @@ func (s Settings) Validate() error {
 	}
 
 	return nil
+}
+
+func SupportedLanguages() []LanguageOption {
+	languages := make([]LanguageOption, len(supportedLanguages))
+	copy(languages, supportedLanguages)
+	return languages
+}
+
+func LabelForLanguage(language Language) string {
+	for _, option := range supportedLanguages {
+		if option.Language == language {
+			return option.Label
+		}
+	}
+	return LabelForLanguage(LanguageNorwegian)
+}
+
+func LanguageForLabel(label string) (Language, bool) {
+	for _, option := range supportedLanguages {
+		if option.Label == label {
+			return option.Language, true
+		}
+	}
+	return "", false
 }
 
 // Generate returns a password like Fjell-Ovenfor3.
@@ -291,10 +351,44 @@ func applyWordCase(word string, settings Settings) string {
 }
 
 func wordsForLanguage(language Language) []string {
-	if language == LanguageEnglish {
+	switch language {
+	case LanguageCzech:
+		return czechWords
+	case LanguageDanish:
+		return danishWords
+	case LanguageDutch:
+		return dutchWords
+	case LanguageEnglish:
 		return englishWords
+	case LanguageFinnish:
+		return finnishWords
+	case LanguageFrench:
+		return frenchWords
+	case LanguageGerman:
+		return germanWords
+	case LanguageHungarian:
+		return hungarianWords
+	case LanguageItalian:
+		return italianWords
+	case LanguageNorwegian:
+		return norwegianWords
+	case LanguagePolish:
+		return polishWords
+	case LanguagePortuguese:
+		return portugueseWords
+	case LanguageRomanian:
+		return romanianWords
+	case LanguageSpanish:
+		return spanishWords
+	case LanguageSwedish:
+		return swedishWords
+	default:
+		return nil
 	}
-	return norwegianWords
+}
+
+func isSupportedLanguage(language Language) bool {
+	return wordsForLanguage(language) != nil
 }
 
 func randomCharacterGroups(settings Settings) []string {

@@ -20,11 +20,11 @@ Default rules:
 The tray menu also has a `Settings...` item. It opens a native Fyne settings window where you can choose:
 
 - passphrase or random password
-- Norwegian or English passphrase words
+- major European passphrase languages: Czech, Danish, Dutch, English, Finnish, French, German, Hungarian, Italian, Norwegian, Polish, Portuguese, Romanian, Spanish, and Swedish
 - minimum and maximum length
 - lowercase, uppercase, numbers, and special characters
 
-Settings are saved as JSON in the user's OS config directory and are loaded again the next time GoPass starts.
+Settings are saved as JSON in the user's OS config directory and are loaded again the next time GoPass starts. Passphrase words are stored as plain ASCII; accents are removed where needed so generated passwords stay compatible with strict password fields.
 
 ## Important note about “one app”
 
@@ -152,6 +152,7 @@ Edit:
 ```text
 internal/password/words.go
 internal/password/words_english.go
+internal/password/words_european.go
 ```
 
 Then run:
