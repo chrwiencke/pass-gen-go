@@ -162,17 +162,28 @@ jobs:
           path: release-assets
 
       - name: Show release assets
-        run: ls -lh release-assets
+        run: find release-assets -maxdepth 3 -type f -print | sort
 
       - name: Create or update release and upload assets
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          assets=()
+          while IFS= read -r asset; do
+            assets+=("$asset")
+          done < <(find release-assets -maxdepth 3 -type f -print | sort)
+
+          if [[ "${#assets[@]}" -eq 0 ]]; then
+            echo "No release assets found under release-assets" >&2
+            exit 1
+          fi
+
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" release-assets/* --clobber
+            gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber
           else
-            gh release create "${GITHUB_REF_NAME}" release-assets/* \
+            gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
               --title "GoPass ${GITHUB_REF_NAME}" \
               --notes "Automated GoPass release for ${GITHUB_REF_NAME}. macOS builds are ad-hoc signed but not Apple-notarized, so first launch may still require Privacy & Security → Open Anyway."
           fi
