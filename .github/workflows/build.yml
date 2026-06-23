@@ -1,0 +1,114 @@
+name: Test and Build GoPass
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gopass-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION_FILE: go.mod
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run unit tests
+        run: go test ./internal/...
+
+  build-macos:
+    name: Build macOS ${{ matrix.arch }}
+    needs: test
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: amd64
+            runner: macos-15-intel
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+
+      - name: Build GoPass.app
+        env:
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          chmod +x scripts/build-macos.sh
+          ./scripts/build-macos.sh
+
+      - name: Zip GoPass.app
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dist/macos-${{ matrix.arch }}/GoPass.app" \
+            "dist/GoPass-macos-${{ matrix.arch }}.zip"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: GoPass-macos-${{ matrix.arch }}
+          path: dist/GoPass-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows amd64
+    needs: test
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+
+      - name: Build gopass.exe
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+
+      - name: Zip gopass.exe
+        shell: pwsh
+        run: Compress-Archive -Path dist/windows-amd64/gopass.exe -DestinationPath dist/GoPass-windows-amd64.zip -Force
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: GoPass-windows-amd64
+          path: dist/GoPass-windows-amd64.zip
+          if-no-files-found: error
