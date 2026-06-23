@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -57,7 +57,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -65,24 +65,47 @@ jobs:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: true
 
+      - name: Resolve build version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build GoPass.app
         env:
           GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "1"
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           chmod +x scripts/build-macos.sh
           ./scripts/build-macos.sh
 
-      - name: Zip GoPass.app
+      - name: Zip GoPass.app for normal downloads
         run: |
           ditto -c -k --sequesterRsrc --keepParent \
             "dist/macos-${{ matrix.arch }}/GoPass.app" \
             "dist/GoPass-macos-${{ matrix.arch }}.zip"
 
+      - name: Create raw updater asset
+        run: |
+          RAW_ASSET="dist/gopass_darwin_${{ matrix.arch }}"
+          cp "dist/macos-${{ matrix.arch }}/GoPass.app/Contents/MacOS/GoPass" "$RAW_ASSET"
+          chmod +x "$RAW_ASSET"
+          shasum -a 256 "$RAW_ASSET" > "$RAW_ASSET.sha256"
+          ls -lh "$RAW_ASSET" "$RAW_ASSET.sha256"
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v6
         with:
           name: GoPass-macos-${{ matrix.arch }}
-          path: dist/GoPass-macos-${{ matrix.arch }}.zip
+          path: |
+            dist/GoPass-macos-${{ matrix.arch }}.zip
+            dist/gopass_darwin_${{ matrix.arch }}
+            dist/gopass_darwin_${{ matrix.arch }}.sha256
           if-no-files-found: error
 
   build-windows:
@@ -92,7 +115,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -100,19 +123,45 @@ jobs:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: true
 
+      - name: Resolve build version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME.StartsWith("v")) {
+            "version=$($env:GITHUB_REF_NAME.Substring(1))" >> $env:GITHUB_OUTPUT
+          } else {
+            "version=0.0.0-dev" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Build gopass.exe
         shell: pwsh
+        env:
+          CGO_ENABLED: "1"
+          VERSION: ${{ steps.version.outputs.version }}
         run: ./scripts/build-windows.ps1
 
-      - name: Zip gopass.exe
+      - name: Zip gopass.exe for normal downloads
         shell: pwsh
         run: Compress-Archive -Path dist/windows-amd64/gopass.exe -DestinationPath dist/GoPass-windows-amd64.zip -Force
+
+      - name: Create raw updater asset
+        shell: pwsh
+        run: |
+          Copy-Item dist/windows-amd64/gopass.exe dist/gopass_windows_amd64.exe -Force
+
+          $hash = Get-FileHash -Algorithm SHA256 dist/gopass_windows_amd64.exe
+          "$($hash.Hash.ToLower())  gopass_windows_amd64.exe" | Set-Content -NoNewline dist/gopass_windows_amd64.exe.sha256
+
+          Get-ChildItem dist/gopass_windows_amd64.exe, dist/gopass_windows_amd64.exe.sha256
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v6
         with:
           name: GoPass-windows-amd64
-          path: dist/GoPass-windows-amd64.zip
+          path: |
+            dist/GoPass-windows-amd64.zip
+            dist/gopass_windows_amd64.exe
+            dist/gopass_windows_amd64.exe.sha256
           if-no-files-found: error
 
   release:
@@ -127,7 +176,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Download build artifacts
         uses: actions/download-artifact@v6
@@ -145,9 +194,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" release-assets/*.zip --clobber
+            gh release upload "${GITHUB_REF_NAME}" release-assets/* --clobber
           else
-            gh release create "${GITHUB_REF_NAME}" release-assets/*.zip \
+            gh release create "${GITHUB_REF_NAME}" release-assets/* \
               --title "GoPass ${GITHUB_REF_NAME}" \
               --notes "Automated GoPass release for ${GITHUB_REF_NAME}."
           fi

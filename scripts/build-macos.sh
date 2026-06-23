@@ -2,16 +2,21 @@
 set -euo pipefail
 
 APP_NAME="GoPass"
-BIN_NAME="gopass"
+BIN_NAME="GoPass"
 ARCH="${GOARCH:-$(go env GOARCH)}"
+VERSION="${VERSION:-0.1.0}"
+PLIST_VERSION="${VERSION%%-*}"
+BUNDLE_VERSION="${GITHUB_RUN_NUMBER:-1}"
+
 DIST_DIR="dist/macos-${ARCH}"
 APP_DIR="${DIST_DIR}/${APP_NAME}.app"
 
 rm -rf "${DIST_DIR}"
 mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
 
-CGO_ENABLED=0 GOOS=darwin GOARCH="${ARCH}" \
-  go build -trimpath -ldflags="-s -w" \
+CGO_ENABLED=1 GOOS=darwin GOARCH="${ARCH}" \
+  go build -trimpath \
+  -ldflags="-s -w -X main.version=${VERSION}" \
   -o "${APP_DIR}/Contents/MacOS/${BIN_NAME}" ./cmd/gopass
 
 cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
@@ -30,9 +35,9 @@ cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0.0</string>
+  <string>${PLIST_VERSION}</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>${BUNDLE_VERSION}</string>
   <key>LSMinimumSystemVersion</key>
   <string>12.0</string>
   <key>LSUIElement</key>
