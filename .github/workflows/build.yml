@@ -126,6 +126,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
       - name: Download build artifacts
         uses: actions/download-artifact@v6
         with:
@@ -136,10 +139,15 @@ jobs:
       - name: Show release assets
         run: ls -lh release-assets
 
-      - name: Create release and upload assets
+      - name: Create or update release and upload assets
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" release-assets/*.zip \
-            --title "GoPass ${GITHUB_REF_NAME}" \
-            --notes "Automated GoPass release for ${GITHUB_REF_NAME}."
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" release-assets/*.zip --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" release-assets/*.zip \
+              --title "GoPass ${GITHUB_REF_NAME}" \
+              --notes "Automated GoPass release for ${GITHUB_REF_NAME}."
+          fi
