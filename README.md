@@ -23,19 +23,20 @@ This is one Go codebase for both macOS and Windows. macOS and Windows still requ
 
 ## Requirements
 
-- Go 1.23 or newer
+- Go 1.25 or newer
 - Internet access the first time you build, so Go can download dependencies
 
 Dependencies:
 
-- `github.com/gogpu/systray v0.1.0` for the cross-platform tray/menu-bar icon
+- `fyne.io/systray` for the cross-platform tray/menu-bar icon
+- `github.com/minio/selfupdate` for replacing the running executable during updates
 
 Clipboard copying does not use an external Go clipboard dependency:
 
 - macOS: built-in `pbcopy` command
 - Windows: native Win32 clipboard API
 
-This avoids the `_cgo_init` duplicate-symbol linker conflict that can happen when `github.com/gogpu/systray` and some PureGo clipboard dependencies are linked into the same macOS build.
+This avoids the `_cgo_init` duplicate-symbol linker conflict that can happen when systray and some PureGo clipboard dependencies are linked into the same macOS build.
 
 ## First-time setup
 
@@ -51,6 +52,8 @@ go mod tidy
 go run ./cmd/gopass
 ```
 
+Development builds use version `dev`, so they do not check GitHub for updates.
+
 ## Build for macOS
 
 From macOS or another machine capable of Go Darwin cross-compilation:
@@ -63,9 +66,17 @@ Output:
 
 ```text
 dist/macos-<arch>/GoPass.app
+dist/macos-<arch>/gopass-darwin-<arch>
+dist/macos-<arch>/gopass-darwin-<arch>.sha256
 ```
 
 On macOS, the bundle uses `LSUIElement=1`, so it appears in the menu bar without showing a Dock icon.
+
+Set `VERSION` when building a release:
+
+```bash
+VERSION=1.2.3 ./scripts/build-macos.sh
+```
 
 ## Build for Windows
 
@@ -79,9 +90,18 @@ Output:
 
 ```text
 dist/windows-amd64/gopass.exe
+dist/windows-amd64/gopass-windows-amd64.exe
+dist/windows-amd64/gopass-windows-amd64.exe.sha256
 ```
 
 The Windows build uses `-H=windowsgui`, so it should not open a console window.
+
+Set `$env:VERSION` when building a release:
+
+```powershell
+$env:VERSION = "1.2.3"
+./scripts/build-windows.ps1
+```
 
 ## Build both from macOS/Linux shell
 
@@ -89,13 +109,31 @@ The Windows build uses `-H=windowsgui`, so it should not open a console window.
 ./scripts/build-all.sh
 ```
 
-`build-all.sh` keeps `CGO_ENABLED=0` for both targets. If you previously saw a linker error like `duplicated definition of symbol _cgo_init`, update to this version and run:
+`build-all.sh` requires CGO for systray. It builds macOS locally, and it builds Windows only when `x86_64-w64-mingw32-gcc` is available. If you previously saw a linker error like `duplicated definition of symbol _cgo_init`, update to this version and run:
 
 ```bash
 go clean -cache
 go mod tidy
 sh scripts/build-all.sh
 ```
+
+## Self updates
+
+On launch, GoPass checks the latest release at:
+
+```text
+https://github.com/chrwiencke/pass-gen-go/releases/latest
+```
+
+The tray menu shows an `Update to <version>` item only when the latest release tag is newer than the app's built-in version and the release contains the current platform asset:
+
+```text
+gopass-darwin-amd64
+gopass-darwin-arm64
+gopass-windows-amd64.exe
+```
+
+Upload the matching `.sha256` file next to each asset for checksum verification. After the user right-clicks the tray/menu-bar icon and clicks `Update`, the app downloads the release asset, applies it with `github.com/minio/selfupdate`, and asks for a restart so the new binary is used.
 
 ## Change the word list
 

@@ -4,15 +4,23 @@ set -euo pipefail
 APP_NAME="GoPass"
 BIN_NAME="gopass"
 ARCH="${GOARCH:-$(go env GOARCH)}"
+VERSION="${VERSION:-1.0.0}"
 DIST_DIR="dist/macos-${ARCH}"
 APP_DIR="${DIST_DIR}/${APP_NAME}.app"
+ASSET_NAME="${BIN_NAME}-darwin-${ARCH}"
+ASSET_PATH="${DIST_DIR}/${ASSET_NAME}"
+LD_FLAGS="-s -w -X main.version=${VERSION}"
 
 rm -rf "${DIST_DIR}"
 mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
 
 CGO_ENABLED=1 GOOS=darwin GOARCH="${ARCH}" \
-  go build -trimpath -ldflags="-s -w" \
+  go build -trimpath -ldflags="${LD_FLAGS}" \
   -o "${APP_DIR}/Contents/MacOS/${BIN_NAME}" ./cmd/gopass
+
+cp "${APP_DIR}/Contents/MacOS/${BIN_NAME}" "${ASSET_PATH}"
+checksum="$(shasum -a 256 "${ASSET_PATH}" | awk '{print $1}')"
+printf "%s  %s\n" "${checksum}" "${ASSET_NAME}" > "${ASSET_PATH}.sha256"
 
 cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -30,9 +38,9 @@ cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0.0</string>
+  <string>${VERSION}</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>${VERSION}</string>
   <key>LSMinimumSystemVersion</key>
   <string>12.0</string>
   <key>LSUIElement</key>
@@ -53,3 +61,4 @@ codesign --force --deep --sign - --timestamp=none "${APP_DIR}"
 codesign --verify --deep --strict --verbose=2 "${APP_DIR}"
 
 echo "Built and ad-hoc signed ${APP_DIR}"
+echo "Release asset: ${ASSET_PATH}"
