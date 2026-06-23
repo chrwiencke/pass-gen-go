@@ -15,8 +15,12 @@ import (
 
 	"gopass/internal/clipboard"
 	"gopass/internal/password"
+	appsettings "gopass/internal/settings"
+	"gopass/internal/settingsui"
 	"gopass/internal/updater"
 
+	"fyne.io/fyne/v2"
+	fyneapp "fyne.io/fyne/v2/app"
 	"fyne.io/systray"
 )
 
@@ -27,11 +31,26 @@ const (
 )
 
 var version = "dev"
+var guiApp fyne.App
+var passwordSettings *appsettings.Manager
+var passwordSettingsUI *settingsui.UI
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	systray.Run(onReady, onExit)
+	guiApp = fyneapp.NewWithID("local.gopass.tray")
+
+	settingsManager, err := appsettings.NewManager()
+	if err != nil {
+		log.Printf("settings load failed: %v", err)
+	}
+	passwordSettings = settingsManager
+	passwordSettingsUI = settingsui.New(guiApp, settingsManager)
+
+	startTray, stopTray := systray.RunWithExternalLoop(onReady, onExit)
+	guiApp.Lifecycle().SetOnStarted(startTray)
+	guiApp.Lifecycle().SetOnStopped(stopTray)
+	guiApp.Run()
 }
 
 func onReady() {
@@ -40,9 +59,10 @@ func onReady() {
 	systray.SetIcon(iconPNG)
 	systray.SetTemplateIcon(iconPNG, iconPNG)
 	systray.SetTitle(appName)
-	systray.SetTooltip(appName + ": left-click to copy a Norwegian password")
+	systray.SetTooltip(appName + ": left-click to copy a password")
 
-	copyItem := systray.AddMenuItem("Copy password", "Copy a Norwegian password")
+	copyItem := systray.AddMenuItem("Copy password", "Copy a password")
+	settingsItem := systray.AddMenuItem("Settings...", "Change password generator settings")
 	updateItem := systray.AddMenuItem("Update", "Update "+appName)
 	updateItem.Hide()
 	systray.AddSeparator()
@@ -63,7 +83,17 @@ func onReady() {
 	}()
 
 	go func() {
+		for range settingsItem.ClickedCh {
+			openSettings()
+		}
+	}()
+
+	go func() {
 		<-quitItem.ClickedCh
+		if guiApp != nil {
+			fyne.Do(guiApp.Quit)
+			return
+		}
 		systray.Quit()
 	}()
 }
@@ -73,7 +103,12 @@ func onExit() {
 }
 
 func copyPassword() {
-	pw, err := password.Generate()
+	settings := password.DefaultSettings()
+	if passwordSettings != nil {
+		settings = passwordSettings.Current()
+	}
+
+	pw, err := password.GenerateWithSettings(settings)
 	if err != nil {
 		systray.SetTooltip(appName + ": could not generate password")
 		log.Printf("password generation failed: %v", err)
@@ -89,6 +124,19 @@ func copyPassword() {
 	systray.SetTooltip(fmt.Sprintf(appName+": password copied at %s", time.Now().Format("15:04:05")))
 
 	// Do not log, display, or notify the actual password. It is only written to the clipboard.
+}
+
+func openSettings() {
+	if passwordSettingsUI == nil {
+		systray.SetTooltip(appName + ": settings are unavailable")
+		return
+	}
+	if err := passwordSettingsUI.Open(); err != nil {
+		systray.SetTooltip(appName + ": could not open settings")
+		log.Printf("settings open failed: %v", err)
+		return
+	}
+	systray.SetTooltip(appName + ": settings opened")
 }
 
 type updateMenu struct {

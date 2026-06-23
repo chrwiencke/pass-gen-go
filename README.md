@@ -2,13 +2,13 @@
 
 A small Go menu-bar/taskbar tray app for macOS and Windows.
 
-Left-click the key icon in the macOS menu bar or Windows tray to generate and copy a password like:
+Left-click the key icon in the macOS menu bar or Windows tray to generate and copy a password. The default settings generate a Norwegian passphrase like:
 
 ```text
 Fjell-Ovenfor3
 ```
 
-Rules implemented:
+Default rules:
 
 - `Word-WordDigit` format, e.g. each word starts with one capital letter and the rest is lowercase
 - Norwegian words, written with plain ASCII only
@@ -16,6 +16,15 @@ Rules implemented:
 - length: over 14 and under 22 characters, meaning 15–21 characters
 - random choices use `crypto/rand`
 - the generated password is not logged, displayed, or stored by the app
+
+The tray menu also has a `Settings...` item. It opens a native Fyne settings window where you can choose:
+
+- passphrase or random password
+- Norwegian or English passphrase words
+- minimum and maximum length
+- lowercase, uppercase, numbers, and special characters
+
+Settings are saved as JSON in the user's OS config directory and are loaded again the next time GoPass starts.
 
 ## Important note about “one app”
 
@@ -28,6 +37,7 @@ This is one Go codebase for both macOS and Windows. macOS and Windows still requ
 
 Dependencies:
 
+- `fyne.io/fyne/v2` for the settings window
 - `fyne.io/systray` for the cross-platform tray/menu-bar icon
 - `github.com/minio/selfupdate` for replacing the running executable during updates
 
@@ -135,12 +145,13 @@ gopass-windows-amd64.exe
 
 Upload the matching `.sha256` file next to each asset for checksum verification. After the user right-clicks the tray/menu-bar icon and clicks `Update`, the app downloads the release asset, applies it with `github.com/minio/selfupdate`, and asks for a restart so the new binary is used.
 
-## Change the word list
+## Change the word lists
 
 Edit:
 
 ```text
 internal/password/words.go
+internal/password/words_english.go
 ```
 
 Then run:
@@ -149,4 +160,4 @@ Then run:
 go test ./internal/password
 ```
 
-The tests check that generated passwords match `Word-WordDigit`, are 15–21 characters long, contain only plain ASCII, and that the word list has at least 1,000 lowercase entries. The included list currently has 1,224 entries.
+The tests check that the default generated passwords still match `Word-WordDigit`, configurable passphrases and random passwords respect their settings, and both word lists contain only lowercase plain ASCII words.
