@@ -69,8 +69,12 @@ jobs:
         env:
           GOARCH: ${{ matrix.arch }}
         run: |
+          version="dev"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
           chmod +x scripts/build-macos.sh
-          ./scripts/build-macos.sh
+          VERSION="${version}" ./scripts/build-macos.sh
 
       - name: Zip GoPass.app
         run: |
@@ -82,7 +86,10 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: GoPass-macos-${{ matrix.arch }}
-          path: dist/GoPass-macos-${{ matrix.arch }}.zip
+          path: |
+            dist/GoPass-macos-${{ matrix.arch }}.zip
+            dist/macos-${{ matrix.arch }}/gopass-darwin-${{ matrix.arch }}
+            dist/macos-${{ matrix.arch }}/gopass-darwin-${{ matrix.arch }}.sha256
           if-no-files-found: error
 
   build-windows:
@@ -111,6 +118,11 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
+          $version = "dev"
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          }
+          $env:VERSION = $version
           gcc --version
           ./scripts/build-windows.ps1
 
@@ -122,7 +134,10 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: GoPass-windows-amd64
-          path: dist/GoPass-windows-amd64.zip
+          path: |
+            dist/GoPass-windows-amd64.zip
+            dist/windows-amd64/gopass-windows-amd64.exe
+            dist/windows-amd64/gopass-windows-amd64.exe.sha256
           if-no-files-found: error
 
   release:
@@ -155,9 +170,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" release-assets/*.zip --clobber
+            gh release upload "${GITHUB_REF_NAME}" release-assets/* --clobber
           else
-            gh release create "${GITHUB_REF_NAME}" release-assets/*.zip \
+            gh release create "${GITHUB_REF_NAME}" release-assets/* \
               --title "GoPass ${GITHUB_REF_NAME}" \
               --notes "Automated GoPass release for ${GITHUB_REF_NAME}. macOS builds are ad-hoc signed but not Apple-notarized, so first launch may still require Privacy & Security → Open Anyway."
           fi

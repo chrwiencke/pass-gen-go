@@ -135,7 +135,7 @@ On launch, GoPass checks the latest release at:
 https://github.com/chrwiencke/pass-gen-go/releases/latest
 ```
 
-The tray menu shows an `Update to <version>` item only when the latest release tag is newer than the app's built-in version and the release contains the current platform asset:
+The tray menu shows an `Update to <version>` item only when the latest release tag is newer than the app's built-in version and the release contains a current-platform updater asset. The updater prefers the raw binary assets:
 
 ```text
 gopass-darwin-amd64
@@ -143,7 +143,15 @@ gopass-darwin-arm64
 gopass-windows-amd64.exe
 ```
 
-Upload the matching `.sha256` file next to each asset for checksum verification. After the user right-clicks the tray/menu-bar icon and clicks `Update`, the app downloads the release asset, applies it with `github.com/minio/selfupdate`, and asks for a restart so the new binary is used.
+It can also use the zipped installer assets produced by GitHub Actions:
+
+```text
+GoPass-macos-amd64.zip
+GoPass-macos-arm64.zip
+GoPass-windows-amd64.zip
+```
+
+Upload the matching `.sha256` file next to each raw binary asset for checksum verification. After the user right-clicks the tray/menu-bar icon and clicks `Update`, the app downloads the release asset, applies it with `github.com/minio/selfupdate`, and asks for a restart so the new binary is used.
 
 ## Change the word lists
 

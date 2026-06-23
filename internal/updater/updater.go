@@ -1,6 +1,8 @@
 package updater
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +12,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"os"
+	zippath "path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -98,15 +101,17 @@ func CheckGitHubRelease(ctx context.Context, cfg Config) (*AvailableUpdate, erro
 		targetArch = runtime.GOARCH
 	}
 
-	assetName := ReleaseAssetName(targetOS, targetArch)
-	asset := findAsset(release.Assets, assetName)
+	assetNames := ReleaseAssetNames(targetOS, targetArch)
+	asset := findFirstAsset(release.Assets, assetNames)
 	if asset == nil {
-		return nil, fmt.Errorf("latest release %s does not include asset %q", latestName, assetName)
+		return nil, fmt.Errorf("latest release %s does not include a supported asset (%s)", latestName, strings.Join(assetNames, ", "))
 	}
 
 	checksumURL := ""
-	if checksumAsset := findAsset(release.Assets, assetName+".sha256"); checksumAsset != nil {
-		checksumURL = checksumAsset.BrowserDownloadURL
+	if !isZipAsset(asset.Name) {
+		if checksumAsset := findAsset(release.Assets, asset.Name+".sha256"); checksumAsset != nil {
+			checksumURL = checksumAsset.BrowserDownloadURL
+		}
 	}
 
 	return &AvailableUpdate{
@@ -130,9 +135,14 @@ func ApplyGitHubRelease(ctx context.Context, update AvailableUpdate, client *htt
 		client = http.DefaultClient
 	}
 
-	checksum, err := downloadChecksum(ctx, client, update)
-	if err != nil {
-		return err
+	archiveAsset := isZipAsset(update.AssetName)
+	var checksum []byte
+	if !archiveAsset {
+		var err error
+		checksum, err = downloadChecksum(ctx, client, update)
+		if err != nil {
+			return err
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, update.DownloadURL, nil)
@@ -150,6 +160,19 @@ func ApplyGitHubRelease(ctx context.Context, update AvailableUpdate, client *htt
 		return fmt.Errorf("download update asset: unexpected HTTP status %s", resp.Status)
 	}
 
+	updateReader := io.Reader(resp.Body)
+	if archiveAsset {
+		archiveBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		executableBytes, err := executableFromZip(archiveBytes, update.AssetName)
+		if err != nil {
+			return err
+		}
+		updateReader = bytes.NewReader(executableBytes)
+	}
+
 	targetPath, err := executablePath()
 	if err != nil {
 		return err
@@ -159,7 +182,7 @@ func ApplyGitHubRelease(ctx context.Context, update AvailableUpdate, client *htt
 		TargetPath: targetPath,
 		Checksum:   checksum,
 	}
-	if err := selfupdate.Apply(resp.Body, opts); err != nil {
+	if err := selfupdate.Apply(updateReader, opts); err != nil {
 		if rollbackErr := selfupdate.RollbackError(err); rollbackErr != nil {
 			return fmt.Errorf("apply update failed and rollback failed: %w", rollbackErr)
 		}
@@ -169,13 +192,34 @@ func ApplyGitHubRelease(ctx context.Context, update AvailableUpdate, client *htt
 	return finalizeUpdate(targetPath)
 }
 
-// ReleaseAssetName returns the exact GitHub release asset name this updater expects.
+// ReleaseAssetName returns the raw self-update binary asset name.
 func ReleaseAssetName(goos, goarch string) string {
 	ext := ""
 	if goos == "windows" {
 		ext = ".exe"
 	}
 	return fmt.Sprintf("gopass-%s-%s%s", goos, goarch, ext)
+}
+
+// ReleaseAssetNames returns the GitHub release asset names this updater can use.
+func ReleaseAssetNames(goos, goarch string) []string {
+	names := []string{ReleaseAssetName(goos, goarch)}
+	if archiveName := ReleaseArchiveAssetName(goos, goarch); archiveName != "" {
+		names = append(names, archiveName)
+	}
+	return names
+}
+
+// ReleaseArchiveAssetName returns the zipped installer asset name produced by CI.
+func ReleaseArchiveAssetName(goos, goarch string) string {
+	switch goos {
+	case "darwin":
+		return fmt.Sprintf("GoPass-macos-%s.zip", goarch)
+	case "windows":
+		return fmt.Sprintf("GoPass-windows-%s.zip", goarch)
+	default:
+		return fmt.Sprintf("GoPass-%s-%s.zip", goos, goarch)
+	}
 }
 
 func (cfg Config) validate() error {
@@ -273,6 +317,50 @@ func parseSHA256Checksum(text, assetName string) ([]byte, error) {
 	return nil, fmt.Errorf("checksum file does not contain a SHA-256 sum for %q", assetName)
 }
 
+func executableFromZip(body []byte, assetName string) ([]byte, error) {
+	reader, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return nil, fmt.Errorf("open update archive %q: %w", assetName, err)
+	}
+
+	candidates := archiveExecutableCandidates(assetName)
+	file := findZipFile(reader.File, candidates)
+	if file == nil {
+		return nil, fmt.Errorf("update archive %q does not contain %s", assetName, strings.Join(candidates, " or "))
+	}
+
+	rc, err := file.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	executable, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, err
+	}
+	if len(executable) == 0 {
+		return nil, fmt.Errorf("update archive %q contains an empty executable %q", assetName, file.Name)
+	}
+	return executable, nil
+}
+
+func archiveExecutableCandidates(assetName string) []string {
+	name := strings.ToLower(assetName)
+	switch {
+	case strings.Contains(name, "macos") || strings.Contains(name, "darwin"):
+		return []string{
+			"GoPass.app/Contents/MacOS/gopass",
+			"Contents/MacOS/gopass",
+			"gopass",
+		}
+	case strings.Contains(name, "windows"):
+		return []string{"gopass.exe"}
+	default:
+		return []string{"gopass", "gopass.exe"}
+	}
+}
+
 func isHex(s string) bool {
 	for _, r := range s {
 		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
@@ -282,6 +370,15 @@ func isHex(s string) bool {
 	return true
 }
 
+func findFirstAsset(assets []githubAsset, names []string) *githubAsset {
+	for _, name := range names {
+		if asset := findAsset(assets, name); asset != nil {
+			return asset
+		}
+	}
+	return nil
+}
+
 func findAsset(assets []githubAsset, name string) *githubAsset {
 	for i := range assets {
 		if assets[i].Name == name && assets[i].BrowserDownloadURL != "" && (assets[i].State == "" || assets[i].State == "uploaded") {
@@ -289,6 +386,52 @@ func findAsset(assets []githubAsset, name string) *githubAsset {
 		}
 	}
 	return nil
+}
+
+func findZipFile(files []*zip.File, candidates []string) *zip.File {
+	wanted := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		wanted[cleanZipPath(candidate)] = struct{}{}
+	}
+
+	for _, file := range files {
+		if !usableZipFile(file) {
+			continue
+		}
+		if _, ok := wanted[cleanZipPath(file.Name)]; ok {
+			return file
+		}
+	}
+
+	for _, file := range files {
+		if !usableZipFile(file) {
+			continue
+		}
+		base := zippath.Base(cleanZipPath(file.Name))
+		for _, candidate := range candidates {
+			if base == zippath.Base(cleanZipPath(candidate)) {
+				return file
+			}
+		}
+	}
+
+	return nil
+}
+
+func usableZipFile(file *zip.File) bool {
+	if file.FileInfo().IsDir() {
+		return false
+	}
+	return file.FileInfo().Mode()&os.ModeSymlink == 0
+}
+
+func cleanZipPath(name string) string {
+	name = strings.TrimPrefix(name, "./")
+	return zippath.Clean(name)
+}
+
+func isZipAsset(name string) bool {
+	return strings.EqualFold(filepath.Ext(name), ".zip")
 }
 
 func executablePath() (string, error) {
