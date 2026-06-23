@@ -100,9 +100,19 @@ jobs:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: true
 
+      - name: Install MinGW-w64 for CGO
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+
       - name: Build gopass.exe
         shell: pwsh
-        run: ./scripts/build-windows.ps1
+        run: |
+          $env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
+          gcc --version
+          ./scripts/build-windows.ps1
 
       - name: Zip gopass.exe
         shell: pwsh
