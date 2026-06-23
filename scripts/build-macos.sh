@@ -10,7 +10,7 @@ APP_DIR="${DIST_DIR}/${APP_NAME}.app"
 rm -rf "${DIST_DIR}"
 mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
 
-CGO_ENABLED=0 GOOS=darwin GOARCH="${ARCH}" \
+CGO_ENABLED=1 GOOS=darwin GOARCH="${ARCH}" \
   go build -trimpath -ldflags="-s -w" \
   -o "${APP_DIR}/Contents/MacOS/${BIN_NAME}" ./cmd/gopass
 
