@@ -9,7 +9,7 @@ if (Test-Path $distDir) {
 }
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 
-$env:CGO_ENABLED = "0"
+$env:CGO_ENABLED = "1"
 $env:GOOS = "windows"
 $env:GOARCH = $arch
 
