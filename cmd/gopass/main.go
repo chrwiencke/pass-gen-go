@@ -8,13 +8,12 @@ import (
 	"image/draw"
 	"image/png"
 	"log"
-	"os"
 	"time"
 
 	"gopass/internal/clipboard"
 	"gopass/internal/password"
 
-	"github.com/gogpu/systray"
+	"fyne.io/systray"
 )
 
 const appName = "GoPass"
@@ -22,51 +21,57 @@ const appName = "GoPass"
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	tray := systray.New()
-	menu := systray.NewMenu()
-
-	menu.Add("Copy password", func() {
-		copyPassword(tray)
-	})
-	menu.AddSeparator()
-	menu.Add("Quit", func() {
-		tray.Remove()
-		os.Exit(0)
-	})
-
-	iconPNG := makeKeyIconPNG()
-	tray.SetIcon(iconPNG).
-		SetTemplateIcon(iconPNG).
-		SetTooltip(appName + ": left-click to copy a Norwegian password").
-		SetMenu(menu)
-
-	// Left-clicking the macOS menu-bar icon or Windows taskbar tray icon copies a new password.
-	tray.OnClick(func() {
-		copyPassword(tray)
-	})
-
-	tray.Show()
-
-	if err := tray.Run(); err != nil {
-		log.Fatalf("tray loop failed: %v", err)
-	}
+	systray.Run(onReady, onExit)
 }
 
-func copyPassword(tray *systray.SystemTray) {
+func onReady() {
+	iconPNG := makeKeyIconPNG()
+
+	systray.SetIcon(iconPNG)
+	systray.SetTemplateIcon(iconPNG, iconPNG)
+	systray.SetTitle(appName)
+	systray.SetTooltip(appName + ": left-click to copy a Norwegian password")
+
+	copyItem := systray.AddMenuItem("Copy password", "Copy a Norwegian password")
+	systray.AddSeparator()
+	quitItem := systray.AddMenuItem("Quit", "Quit "+appName)
+
+	// Left-clicking the macOS menu-bar icon or Windows taskbar tray icon copies a new password.
+	systray.SetOnTapped(func() {
+		copyPassword()
+	})
+
+	go func() {
+		for range copyItem.ClickedCh {
+			copyPassword()
+		}
+	}()
+
+	go func() {
+		<-quitItem.ClickedCh
+		systray.Quit()
+	}()
+}
+
+func onExit() {
+	// Nothing to clean up.
+}
+
+func copyPassword() {
 	pw, err := password.Generate()
 	if err != nil {
-		tray.SetTooltip(appName + ": could not generate password")
+		systray.SetTooltip(appName + ": could not generate password")
 		log.Printf("password generation failed: %v", err)
 		return
 	}
 
 	if err := clipboard.CopyText(pw); err != nil {
-		tray.SetTooltip(appName + ": clipboard is unavailable")
+		systray.SetTooltip(appName + ": clipboard is unavailable")
 		log.Printf("clipboard copy failed: %v", err)
 		return
 	}
 
-	tray.SetTooltip(fmt.Sprintf(appName+": password copied at %s", time.Now().Format("15:04:05")))
+	systray.SetTooltip(fmt.Sprintf(appName+": password copied at %s", time.Now().Format("15:04:05")))
 
 	// Do not log, display, or notify the actual password. It is only written to the clipboard.
 }
@@ -78,7 +83,7 @@ func makeKeyIconPNG() []byte {
 	transparent := color.RGBA{0, 0, 0, 0}
 	draw.Draw(img, img.Bounds(), &image.Uniform{transparent}, image.Point{}, draw.Src)
 
-	// Pixel-art key tray icon. PNG is accepted by gogpu/systray on macOS and Windows.
+	// Pixel-art key tray icon. PNG is accepted by fyne.io/systray on macOS and Windows.
 	key := color.RGBA{245, 190, 60, 255}
 	shadow := color.RGBA{132, 88, 0, 255}
 
