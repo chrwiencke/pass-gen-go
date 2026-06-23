@@ -62,6 +62,16 @@ func (u *UI) Open() error {
 	return nil
 }
 
+func (u *UI) Close() {
+	if u == nil || u.app == nil {
+		return
+	}
+
+	fyne.Do(func() {
+		u.closeOnUIThread()
+	})
+}
+
 func (u *UI) openOnUIThread() {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -73,6 +83,20 @@ func (u *UI) openOnUIThread() {
 	u.form.load(u.manager.Current())
 	u.window.Show()
 	u.window.RequestFocus()
+}
+
+func (u *UI) closeOnUIThread() {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	if u.window == nil {
+		return
+	}
+
+	u.window.SetCloseIntercept(nil)
+	u.window.Close()
+	u.window = nil
+	u.form = nil
 }
 
 func (u *UI) buildWindow() (fyne.Window, *settingsForm) {

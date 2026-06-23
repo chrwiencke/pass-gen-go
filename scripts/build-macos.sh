@@ -44,7 +44,7 @@ cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key>
   <string>12.0</string>
   <key>LSUIElement</key>
-  <string>1</string>
+  <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
 </dict>

@@ -9,6 +9,7 @@ import (
 	"image/draw"
 	"image/png"
 	"log"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,19 +26,22 @@ import (
 )
 
 const (
-	appName     = "GoPass"
-	githubOwner = "chrwiencke"
-	githubRepo  = "pass-gen-go"
+	appName             = "GoPass"
+	githubOwner         = "chrwiencke"
+	githubRepo          = "pass-gen-go"
+	gracefulQuitTimeout = 5 * time.Second
 )
 
 var version = "dev"
 var guiApp fyne.App
 var passwordSettings *appsettings.Manager
 var passwordSettingsUI *settingsui.UI
+var shutdownOnce sync.Once
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
+	enforceMenuBarOnly()
 	guiApp = fyneapp.NewWithID("local.gopass.tray")
 
 	settingsManager, err := appsettings.NewManager()
@@ -47,9 +51,13 @@ func main() {
 	passwordSettings = settingsManager
 	passwordSettingsUI = settingsui.New(guiApp, settingsManager)
 
-	startTray, stopTray := systray.RunWithExternalLoop(onReady, onExit)
-	guiApp.Lifecycle().SetOnStarted(startTray)
-	guiApp.Lifecycle().SetOnStopped(stopTray)
+	startTray, _ := systray.RunWithExternalLoop(onReady, onExit)
+	guiApp.Lifecycle().SetOnStarted(func() {
+		// GLFW promotes unbundled macOS apps to a regular Dock app during init.
+		enforceMenuBarOnly()
+		startTray()
+		enforceMenuBarOnly()
+	})
 	guiApp.Run()
 }
 
@@ -90,16 +98,33 @@ func onReady() {
 
 	go func() {
 		<-quitItem.ClickedCh
-		if guiApp != nil {
-			fyne.Do(guiApp.Quit)
-			return
-		}
-		systray.Quit()
+		quitApp()
 	}()
 }
 
 func onExit() {
 	// Nothing to clean up.
+}
+
+func quitApp() {
+	shutdownOnce.Do(func() {
+		systray.SetTooltip(appName + ": quitting")
+		time.AfterFunc(gracefulQuitTimeout, func() {
+			log.Printf("forced exit after waiting %s for graceful quit", gracefulQuitTimeout)
+			os.Exit(0)
+		})
+
+		go systray.Quit()
+
+		if passwordSettingsUI != nil {
+			passwordSettingsUI.Close()
+		}
+		if guiApp != nil {
+			fyne.Do(guiApp.Quit)
+			return
+		}
+		os.Exit(0)
+	})
 }
 
 func copyPassword() {

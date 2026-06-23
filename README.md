@@ -80,7 +80,7 @@ dist/macos-<arch>/gopass-darwin-<arch>
 dist/macos-<arch>/gopass-darwin-<arch>.sha256
 ```
 
-On macOS, the bundle uses `LSUIElement=1`, so it appears in the menu bar without showing a Dock icon.
+On macOS, the bundle enables `LSUIElement`, so it appears in the menu bar without showing a Dock icon.
 
 Set `VERSION` when building a release:
 
