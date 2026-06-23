@@ -44,4 +44,12 @@ cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
 PLIST
 
 chmod +x "${APP_DIR}/Contents/MacOS/${BIN_NAME}"
-echo "Built ${APP_DIR}"
+
+# macOS on Apple Silicon requires executable code inside app bundles to have a
+# valid code signature. This ad-hoc signature does not remove Gatekeeper's
+# unidentified-developer warning, but it prevents the misleading
+# "app is damaged" error for unsigned CI builds.
+codesign --force --deep --sign - --timestamp=none "${APP_DIR}"
+codesign --verify --deep --strict --verbose=2 "${APP_DIR}"
+
+echo "Built and ad-hoc signed ${APP_DIR}"

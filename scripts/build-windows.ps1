@@ -13,6 +13,10 @@ $env:CGO_ENABLED = "1"
 $env:GOOS = "windows"
 $env:GOARCH = $arch
 
+if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
+    Write-Error "gcc was not found. Install MSYS2/MinGW-w64, or let GitHub Actions build the Windows exe."
+}
+
 go build -trimpath -ldflags="-H=windowsgui -s -w" -o $out ./cmd/gopass
 
 Write-Host "Built $out"

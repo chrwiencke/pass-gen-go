@@ -65,7 +65,7 @@ jobs:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: true
 
-      - name: Build GoPass.app
+      - name: Build and ad-hoc sign GoPass.app
         env:
           GOARCH: ${{ matrix.arch }}
         run: |
@@ -159,5 +159,5 @@ jobs:
           else
             gh release create "${GITHUB_REF_NAME}" release-assets/*.zip \
               --title "GoPass ${GITHUB_REF_NAME}" \
-              --notes "Automated GoPass release for ${GITHUB_REF_NAME}."
+              --notes "Automated GoPass release for ${GITHUB_REF_NAME}. macOS builds are ad-hoc signed but not Apple-notarized, so first launch may still require Privacy & Security → Open Anyway."
           fi
