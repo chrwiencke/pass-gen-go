@@ -4,9 +4,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"gopass/internal/updater"
 )
 
 func relaunchApp() error {
+	if handled, err := updater.StartPendingRelaunch(); handled || err != nil {
+		return err
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return err

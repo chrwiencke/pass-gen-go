@@ -8,8 +8,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 )
+
+var pendingRelaunch pendingRelaunchState
+
+type pendingRelaunchState struct {
+	mu     sync.Mutex
+	script string
+	args   []string
+}
 
 func finalizeUpdate(targetPath string) error {
 	appDir, ok := appBundleRoot(targetPath)
@@ -54,7 +64,12 @@ func applyArchiveUpdate(body []byte, assetName, targetPath string) (bool, error)
 	if err != nil {
 		return true, err
 	}
-	defer os.RemoveAll(tempDir)
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.RemoveAll(tempDir)
+		}
+	}()
 
 	nextAppDir := filepath.Join(tempDir, filepath.Base(currentAppDir))
 	if err := extractAppBundle(reader.File, appRoot, nextAppDir); err != nil {
@@ -65,15 +80,80 @@ func applyArchiveUpdate(body []byte, assetName, targetPath string) (bool, error)
 	}
 
 	backupDir := filepath.Join(tempDir, filepath.Base(currentAppDir)+".previous")
-	if err := os.Rename(currentAppDir, backupDir); err != nil {
+	scriptPath := filepath.Join(tempDir, "finish-update.sh")
+	if err := writeRelaunchScript(scriptPath); err != nil {
 		return true, err
 	}
 
-	if err := os.Rename(nextAppDir, currentAppDir); err != nil {
-		_ = os.Rename(backupDir, currentAppDir)
+	pendingRelaunch.set(scriptPath,
+		strconv.Itoa(os.Getpid()),
+		currentAppDir,
+		nextAppDir,
+		backupDir,
+		tempDir,
+	)
+	cleanup = false
+	return true, nil
+}
+
+func StartPendingRelaunch() (bool, error) {
+	return pendingRelaunch.start()
+}
+
+func (s *pendingRelaunchState) set(script string, args ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.script = script
+	s.args = append([]string(nil), args...)
+}
+
+func (s *pendingRelaunchState) start() (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.script == "" {
+		return false, nil
+	}
+
+	cmd := exec.Command(s.script, s.args...)
+	if err := cmd.Start(); err != nil {
 		return true, err
 	}
+	s.script = ""
+	s.args = nil
 	return true, nil
+}
+
+func writeRelaunchScript(path string) error {
+	const script = `#!/bin/sh
+set -eu
+
+pid="$1"
+current_app="$2"
+next_app="$3"
+backup_app="$4"
+temp_dir="$5"
+
+while kill -0 "$pid" 2>/dev/null; do
+	sleep 0.2
+done
+
+rm -rf "$backup_app"
+if [ -e "$current_app" ]; then
+	mv "$current_app" "$backup_app"
+fi
+
+if ! mv "$next_app" "$current_app"; then
+	if [ -e "$backup_app" ]; then
+		mv "$backup_app" "$current_app"
+	fi
+	exit 1
+fi
+
+/usr/bin/open "$current_app"
+rm -rf "$backup_app"
+rm -rf "$temp_dir"
+`
+	return os.WriteFile(path, []byte(script), 0o755)
 }
 
 func verifyCodeSignature(appDir string) error {

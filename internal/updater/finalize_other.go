@@ -9,3 +9,7 @@ func finalizeUpdate(string) error {
 func applyArchiveUpdate([]byte, string, string) (bool, error) {
 	return false, nil
 }
+
+func StartPendingRelaunch() (bool, error) {
+	return false, nil
+}
