@@ -2,6 +2,7 @@ package settingsui
 
 import (
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
@@ -40,7 +42,7 @@ type settingsForm struct {
 	uppercase *widget.Check
 	numbers   *widget.Check
 	special   *widget.Check
-	shortcut  *widget.Entry
+	shortcut  *shortcutCapture
 	status    *widget.Label
 }
 
@@ -169,7 +171,7 @@ func newSettingsForm() *settingsForm {
 	maxLength := widget.NewEntry()
 	maxLength.SetPlaceHolder(strconv.Itoa(password.MaxLength))
 
-	pasteShortcut := widget.NewEntry()
+	pasteShortcut := newShortcutCapture()
 	pasteShortcut.SetPlaceHolder(shortcut.Default())
 
 	status := widget.NewLabel("")
@@ -259,6 +261,113 @@ func parseShortcut(value string) (string, error) {
 		return "", fmt.Errorf("shortcut %s", err)
 	}
 	return parsed.String(), nil
+}
+
+type shortcutCapture struct {
+	widget.Entry
+
+	held map[fyne.KeyName]bool
+}
+
+var _ desktop.Keyable = (*shortcutCapture)(nil)
+
+func newShortcutCapture() *shortcutCapture {
+	c := &shortcutCapture{held: make(map[fyne.KeyName]bool)}
+	c.Wrapping = fyne.TextWrap(fyne.TextTruncateClip)
+	c.ExtendBaseWidget(c)
+	return c
+}
+
+func (c *shortcutCapture) KeyDown(event *fyne.KeyEvent) {
+	if event == nil {
+		return
+	}
+	c.held[event.Name] = true
+	if shortcutValue, ok := c.shortcutFor(event.Name); ok {
+		c.SetText(shortcutValue)
+		return
+	}
+	c.showHeldModifiers()
+}
+
+func (c *shortcutCapture) KeyUp(event *fyne.KeyEvent) {
+	if event == nil {
+		return
+	}
+	delete(c.held, event.Name)
+}
+
+func (c *shortcutCapture) TypedKey(event *fyne.KeyEvent) {
+	if event == nil {
+		return
+	}
+	if shortcutValue, ok := c.shortcutFor(event.Name); ok {
+		c.SetText(shortcutValue)
+	}
+}
+
+func (c *shortcutCapture) TypedRune(r rune) {
+}
+
+func (c *shortcutCapture) shortcutFor(key fyne.KeyName) (string, bool) {
+	keyName := shortcutKeyName(key)
+	if keyName == "" {
+		return "", false
+	}
+
+	parts := c.modifierParts()
+	if len(parts) == 0 {
+		return "", false
+	}
+
+	parts = append(parts, keyName)
+	value := strings.Join(parts, "+")
+	parsed, err := shortcut.ParseCurrentPlatform(value)
+	if err != nil {
+		return "", false
+	}
+	return parsed.String(), true
+}
+
+func (c *shortcutCapture) modifierParts() []string {
+	parts := make([]string, 0, 4)
+	if c.held[desktop.KeyControlLeft] || c.held[desktop.KeyControlRight] {
+		parts = append(parts, "Ctrl")
+	}
+	if c.held[desktop.KeyShiftLeft] || c.held[desktop.KeyShiftRight] {
+		parts = append(parts, "Shift")
+	}
+	if c.held[desktop.KeySuperLeft] || c.held[desktop.KeySuperRight] {
+		if runtime.GOOS == "darwin" {
+			parts = append(parts, "Command")
+		} else {
+			parts = append(parts, "Windows")
+		}
+	}
+	return parts
+}
+
+func (c *shortcutCapture) showHeldModifiers() {
+	parts := c.modifierParts()
+	if len(parts) == 0 {
+		return
+	}
+	c.SetText(strings.Join(append(parts, "..."), "+"))
+}
+
+func shortcutKeyName(key fyne.KeyName) string {
+	value := string(key)
+	if len(value) != 1 {
+		return ""
+	}
+	keyRune := value[0]
+	if (keyRune >= 'a' && keyRune <= 'z') || (keyRune >= 'A' && keyRune <= 'Z') {
+		return strings.ToUpper(value)
+	}
+	if keyRune >= '0' && keyRune <= '9' {
+		return value
+	}
+	return ""
 }
 
 func parseLength(label, value string) (int, error) {

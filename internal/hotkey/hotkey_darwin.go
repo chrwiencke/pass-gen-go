@@ -57,6 +57,7 @@ import (
 
 const (
 	carbonControl = 1 << 12
+	carbonShift   = 1 << 9
 	carbonCommand = 1 << 8
 )
 
@@ -76,6 +77,9 @@ func register(value string, callback func()) error {
 	var modifiers C.UInt32
 	if parsed.Control {
 		modifiers |= carbonControl
+	}
+	if parsed.Shift {
+		modifiers |= carbonShift
 	}
 	if parsed.Command {
 		modifiers |= carbonCommand

@@ -60,6 +60,9 @@ func register(value string, callback func()) error {
 	if parsed.Control {
 		modifiers |= modControl
 	}
+	if parsed.Shift {
+		modifiers |= modShift
+	}
 	if parsed.Windows {
 		modifiers |= modWin
 	}
@@ -113,4 +116,3 @@ func windowsErr(err error) error {
 }
 
 var _ = modAlt
-var _ = modShift

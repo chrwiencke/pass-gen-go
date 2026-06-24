@@ -9,6 +9,7 @@ import (
 
 type Shortcut struct {
 	Control bool
+	Shift   bool
 	Command bool
 	Windows bool
 	Key     string
@@ -62,6 +63,8 @@ func Parse(value string) (Shortcut, error) {
 		switch token {
 		case "ctrl", "control":
 			parsed.Control = true
+		case "shift":
+			parsed.Shift = true
 		case "cmd", "command", "meta":
 			parsed.Command = true
 		case "win", "windows", "super":
@@ -81,7 +84,7 @@ func Parse(value string) (Shortcut, error) {
 	if parsed.Key == "" {
 		return Shortcut{}, fmt.Errorf("shortcut must contain a key")
 	}
-	if !parsed.Control && !parsed.Command && !parsed.Windows {
+	if !parsed.Control && !parsed.Shift && !parsed.Command && !parsed.Windows {
 		return Shortcut{}, fmt.Errorf("shortcut must contain at least one modifier")
 	}
 	return parsed, nil
@@ -91,6 +94,9 @@ func (s Shortcut) String() string {
 	parts := make([]string, 0, 4)
 	if s.Control {
 		parts = append(parts, "Ctrl")
+	}
+	if s.Shift {
+		parts = append(parts, "Shift")
 	}
 	if s.Command {
 		parts = append(parts, "Command")
