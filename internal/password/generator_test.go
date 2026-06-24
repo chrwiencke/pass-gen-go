@@ -97,8 +97,14 @@ func TestGeneratePassphraseHonorsCustomShortLength(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateWithSettingsWithRand() returned error: %v", err)
 	}
-	if pw != "andarm" {
-		t.Fatalf("password = %q, want %q", pw, "andarm")
+	if len(pw) < settings.MinLength || len(pw) > settings.MaxLength {
+		t.Fatalf("password %q length is %d, want between %d and %d", pw, len(pw), settings.MinLength, settings.MaxLength)
+	}
+	if pw != strings.ToLower(pw) {
+		t.Fatalf("password %q is not lowercase", pw)
+	}
+	if strings.Contains(pw, "-") {
+		t.Fatalf("password %q contains a separator", pw)
 	}
 }
 

@@ -210,36 +210,113 @@ func generatePassphraseWithRand(settings Settings, nextInt RandomIntFunc) (strin
 		return "", err
 	}
 
-	for attempts := 0; attempts < 1000; attempts++ {
-		wordCount, err := randBetween(nextInt, minWords, maxWords)
+	separator := passphraseSeparator(settings)
+	separatorLen := len(separator)
+	numberLen := 0
+	if settings.Numbers {
+		numberLen = 1
+	}
+
+	validWordCounts := make([]int, 0, maxWords-minWords+1)
+	for wordCount := minWords; wordCount <= maxWords; wordCount++ {
+		minWordLengthSum := settings.MinLength - ((wordCount - 1) * separatorLen) - numberLen
+		maxWordLengthSum := settings.MaxLength - ((wordCount - 1) * separatorLen) - numberLen
+		if canMakeWordLengthSum(words, wordCount, minWordLengthSum, maxWordLengthSum) {
+			validWordCounts = append(validWordCounts, wordCount)
+		}
+	}
+	if len(validWordCounts) == 0 {
+		return "", fmt.Errorf("could not generate a passphrase between %d and %d characters", settings.MinLength, settings.MaxLength)
+	}
+
+	wordCountIndex, err := nextInt(len(validWordCounts))
+	if err != nil {
+		return "", err
+	}
+	wordCount := validWordCounts[wordCountIndex]
+
+	minWordLengthSum := settings.MinLength - ((wordCount - 1) * separatorLen) - numberLen
+	maxWordLengthSum := settings.MaxLength - ((wordCount - 1) * separatorLen) - numberLen
+	remainingSums := possibleLengthSums(words, wordCount)
+
+	parts := make([]string, wordCount)
+	usedLength := 0
+	for i := range parts {
+		remainingWords := wordCount - i - 1
+		candidates := make([]string, 0, len(words))
+		for _, word := range words {
+			nextUsedLength := usedLength + len(word)
+			if hasLengthSumInRange(remainingSums[remainingWords], minWordLengthSum-nextUsedLength, maxWordLengthSum-nextUsedLength) {
+				candidates = append(candidates, word)
+			}
+		}
+		if len(candidates) == 0 {
+			return "", fmt.Errorf("could not generate a passphrase between %d and %d characters", settings.MinLength, settings.MaxLength)
+		}
+
+		idx, err := nextInt(len(candidates))
 		if err != nil {
 			return "", err
 		}
-
-		parts := make([]string, wordCount)
-		for i := range parts {
-			idx, err := nextInt(len(words))
-			if err != nil {
-				return "", err
-			}
-
-			parts[i] = applyWordCase(words[idx], settings)
-		}
-
-		pw := strings.Join(parts, passphraseSeparator(settings))
-		if settings.Numbers {
-			digit, err := nextInt(10)
-			if err != nil {
-				return "", err
-			}
-			pw += strconv.Itoa(digit)
-		}
-		if len(pw) >= settings.MinLength && len(pw) <= settings.MaxLength && isPlainASCII(pw) {
-			return pw, nil
-		}
+		word := candidates[idx]
+		parts[i] = applyWordCase(word, settings)
+		usedLength += len(word)
 	}
 
-	return "", fmt.Errorf("could not generate a passphrase between %d and %d characters", settings.MinLength, settings.MaxLength)
+	pw := strings.Join(parts, separator)
+	if settings.Numbers {
+		digit, err := nextInt(10)
+		if err != nil {
+			return "", err
+		}
+		pw += strconv.Itoa(digit)
+	}
+	if len(pw) < settings.MinLength || len(pw) > settings.MaxLength || !isPlainASCII(pw) {
+		return "", fmt.Errorf("could not generate a passphrase between %d and %d characters", settings.MinLength, settings.MaxLength)
+	}
+	return pw, nil
+}
+
+func canMakeWordLengthSum(words []string, wordCount, minSum, maxSum int) bool {
+	sums := possibleLengthSums(words, wordCount)
+	return hasLengthSumInRange(sums[wordCount], minSum, maxSum)
+}
+
+func possibleLengthSums(words []string, maxWordCount int) []map[int]bool {
+	wordLengths := uniqueWordLengths(words)
+	sums := make([]map[int]bool, maxWordCount+1)
+	sums[0] = map[int]bool{0: true}
+	for count := 1; count <= maxWordCount; count++ {
+		sums[count] = map[int]bool{}
+		for previous := range sums[count-1] {
+			for _, length := range wordLengths {
+				sums[count][previous+length] = true
+			}
+		}
+	}
+	return sums
+}
+
+func uniqueWordLengths(words []string) []int {
+	seen := map[int]bool{}
+	lengths := make([]int, 0)
+	for _, word := range words {
+		length := len(word)
+		if !seen[length] {
+			seen[length] = true
+			lengths = append(lengths, length)
+		}
+	}
+	return lengths
+}
+
+func hasLengthSumInRange(sums map[int]bool, minSum, maxSum int) bool {
+	for sum := range sums {
+		if sum >= minSum && sum <= maxSum {
+			return true
+		}
+	}
+	return false
 }
 
 func generateRandomWithRand(settings Settings, nextInt RandomIntFunc) (string, error) {
