@@ -166,6 +166,11 @@ func ApplyGitHubRelease(ctx context.Context, update AvailableUpdate, client *htt
 		if err != nil {
 			return err
 		}
+		if targetPath, err := executablePath(); err == nil {
+			if applied, err := applyArchiveUpdate(archiveBytes, update.AssetName, targetPath); applied || err != nil {
+				return err
+			}
+		}
 		executableBytes, err := executableFromZip(archiveBytes, update.AssetName)
 		if err != nil {
 			return err
@@ -203,8 +208,13 @@ func ReleaseAssetName(goos, goarch string) string {
 
 // ReleaseAssetNames returns the GitHub release asset names this updater can use.
 func ReleaseAssetNames(goos, goarch string) []string {
+	archiveName := ReleaseArchiveAssetName(goos, goarch)
+	if goos == "darwin" && archiveName != "" {
+		return []string{archiveName, ReleaseAssetName(goos, goarch)}
+	}
+
 	names := []string{ReleaseAssetName(goos, goarch)}
-	if archiveName := ReleaseArchiveAssetName(goos, goarch); archiveName != "" {
+	if archiveName != "" {
 		names = append(names, archiveName)
 	}
 	return names

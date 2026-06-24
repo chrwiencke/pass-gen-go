@@ -83,6 +83,37 @@ func TestCheckGitHubReleaseFindsZippedAsset(t *testing.T) {
 	}
 }
 
+func TestCheckGitHubReleasePrefersMacOSArchive(t *testing.T) {
+	client := fakeClient(func(r *http.Request) *http.Response {
+		return jsonResponse(http.StatusOK, `{
+			"tag_name": "v1.2.0",
+			"assets": [
+				{"name": "gopass-darwin-arm64", "browser_download_url": "https://example.test/gopass-darwin-arm64", "state": "uploaded"},
+				{"name": "GoPass-macos-arm64.zip", "browser_download_url": "https://example.test/GoPass-macos-arm64.zip", "state": "uploaded"}
+			]
+		}`)
+	})
+
+	update, err := CheckGitHubRelease(context.Background(), Config{
+		Owner:          "owner",
+		Repo:           "repo",
+		CurrentVersion: "1.1.0",
+		BaseURL:        "https://api.example.test",
+		TargetOS:       "darwin",
+		TargetArch:     "arm64",
+		HTTPClient:     client,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if update == nil {
+		t.Fatal("expected an available update")
+	}
+	if update.AssetName != "GoPass-macos-arm64.zip" {
+		t.Fatalf("unexpected asset: %s", update.AssetName)
+	}
+}
+
 func TestCheckGitHubReleaseHidesWhenNotNewer(t *testing.T) {
 	client := fakeClient(func(r *http.Request) *http.Response {
 		return jsonResponse(http.StatusOK, `{
