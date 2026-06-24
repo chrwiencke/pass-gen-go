@@ -168,6 +168,16 @@ GoPass-windows-amd64.zip
 
 Upload the matching `.sha256` file next to each raw binary asset for checksum verification. After the user right-clicks the tray/menu-bar icon and clicks `Update`, the app downloads the release asset, applies it with `github.com/minio/selfupdate`, and asks for a restart so the new binary is used.
 
+On macOS, Accessibility permission is tied to the app's code signing identity. Ad-hoc signed releases can still require removing and re-adding GoPass in System Settings after each update because every build has a different code identity. To keep the paste shortcut trusted across updates, sign tagged releases with the same Developer ID Application certificate. The GitHub workflow will use these repository secrets when all three are present:
+
+```text
+MACOS_CODESIGN_CERTIFICATE_BASE64
+MACOS_CODESIGN_CERTIFICATE_PASSWORD
+MACOS_CODESIGN_IDENTITY
+```
+
+`MACOS_CODESIGN_CERTIFICATE_BASE64` should be the base64-encoded `.p12` signing certificate, `MACOS_CODESIGN_CERTIFICATE_PASSWORD` is that `.p12` password, and `MACOS_CODESIGN_IDENTITY` is the exact codesign identity, for example `Developer ID Application: Your Name (TEAMID)`. Local release builds can use the same path by setting `MACOS_CODESIGN_IDENTITY` before running `scripts/build-macos.sh`.
+
 ## Change the word lists
 
 Edit:

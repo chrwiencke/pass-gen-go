@@ -65,7 +65,35 @@ jobs:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: true
 
-      - name: Build and ad-hoc sign GoPass.app
+      - name: Import macOS signing certificate
+        env:
+          MACOS_CODESIGN_CERTIFICATE_BASE64: ${{ secrets.MACOS_CODESIGN_CERTIFICATE_BASE64 }}
+          MACOS_CODESIGN_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CODESIGN_CERTIFICATE_PASSWORD }}
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          if [[ -z "${MACOS_CODESIGN_CERTIFICATE_BASE64}" || -z "${MACOS_CODESIGN_CERTIFICATE_PASSWORD}" || -z "${MACOS_CODESIGN_IDENTITY}" ]]; then
+            echo "macOS signing secrets are incomplete; using ad-hoc signing."
+            exit 0
+          fi
+
+          keychain_path="${RUNNER_TEMP}/gopass-signing.keychain-db"
+          certificate_path="${RUNNER_TEMP}/gopass-signing.p12"
+
+          echo "${MACOS_CODESIGN_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}"
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${keychain_path}"
+          security import "${certificate_path}" \
+            -k "${keychain_path}" \
+            -P "${MACOS_CODESIGN_CERTIFICATE_PASSWORD}" \
+            -T /usr/bin/codesign
+          security list-keychains -d user -s "${keychain_path}" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${KEYCHAIN_PASSWORD}" "${keychain_path}"
+
+          echo "MACOS_CODESIGN_IDENTITY=${MACOS_CODESIGN_IDENTITY}" >> "${GITHUB_ENV}"
+
+      - name: Build and sign GoPass.app
         env:
           GOARCH: ${{ matrix.arch }}
         run: |
@@ -185,5 +213,5 @@ jobs:
           else
             gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
               --title "GoPass ${GITHUB_REF_NAME}" \
-              --notes "Automated GoPass release for ${GITHUB_REF_NAME}. macOS builds are ad-hoc signed but not Apple-notarized, so first launch may still require Privacy & Security → Open Anyway."
+              --notes "Automated GoPass release for ${GITHUB_REF_NAME}. If macOS signing secrets were not configured, macOS builds are ad-hoc signed and first launch may still require Privacy & Security → Open Anyway."
           fi
