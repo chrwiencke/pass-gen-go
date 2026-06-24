@@ -34,16 +34,18 @@ type UI struct {
 }
 
 type settingsForm struct {
-	mode      *widget.Select
-	language  *widget.Select
-	minLength *widget.Entry
-	maxLength *widget.Entry
-	lowercase *widget.Check
-	uppercase *widget.Check
-	numbers   *widget.Check
-	special   *widget.Check
-	shortcut  *shortcutCapture
-	status    *widget.Label
+	mode           *widget.Select
+	language       *widget.Select
+	minLength      *widget.Entry
+	maxLength      *widget.Entry
+	lowercase      *widget.Check
+	uppercase      *widget.Check
+	numbers        *widget.Check
+	special        *widget.Check
+	shortcut       *shortcutCapture
+	templateSelect *widget.Select
+	templateName   *widget.Entry
+	status         *widget.Label
 }
 
 func New(app fyne.App, manager *appsettings.Manager, onSave func()) *UI {
@@ -86,7 +88,7 @@ func (u *UI) openOnUIThread() {
 		u.window, u.form = u.buildWindow()
 	}
 
-	u.form.load(u.manager.Current(), u.manager.PasteShortcut())
+	u.form.load(u.manager.Current(), u.manager.PasteShortcut(), u.manager.Templates())
 	u.window.Show()
 	u.window.RequestFocus()
 }
@@ -116,6 +118,9 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 	form.mode.OnChanged = func(value string) {
 		form.setModeControlsEnabled(modeFromLabel(value))
 	}
+	form.templateSelect.OnChanged = func(value string) {
+		form.templateName.SetText(value)
+	}
 
 	saveButton := widget.NewButton("Save", func() {
 		settings, pasteShortcut, err := form.settings()
@@ -129,12 +134,54 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 			return
 		}
 
-		form.status.SetText("Settings saved")
-		if u.onSave != nil {
-			u.onSave()
-		}
+		u.settingsSaved(form, "Settings saved")
 	})
 	saveButton.Importance = widget.HighImportance
+
+	loadTemplateButton := widget.NewButton("Load", func() {
+		template, ok := findTemplate(u.manager.Templates(), form.templateSelect.Selected)
+		if !ok {
+			form.status.SetText("Choose a saved template to load")
+			return
+		}
+
+		form.loadPasswordSettings(template.Settings)
+		form.templateName.SetText(template.Name)
+		form.status.SetText("Template loaded")
+	})
+
+	saveTemplateButton := widget.NewButton("Save template", func() {
+		settings, err := form.passwordSettings()
+		if err != nil {
+			form.status.SetText(err.Error())
+			return
+		}
+
+		name := strings.TrimSpace(form.templateName.Text)
+		if err := u.manager.SaveTemplate(name, settings); err != nil {
+			form.status.SetText("Could not save template: " + err.Error())
+			return
+		}
+
+		form.loadTemplates(u.manager.Templates(), name)
+		u.settingsSaved(form, "Template saved")
+	})
+
+	deleteTemplateButton := widget.NewButton("Delete", func() {
+		name := strings.TrimSpace(form.templateSelect.Selected)
+		if name == "" {
+			name = strings.TrimSpace(form.templateName.Text)
+		}
+
+		if err := u.manager.DeleteTemplate(name); err != nil {
+			form.status.SetText("Could not delete template: " + err.Error())
+			return
+		}
+
+		form.templateName.SetText("")
+		form.loadTemplates(u.manager.Templates(), "")
+		u.settingsSaved(form, "Template deleted")
+	})
 
 	cancelButton := widget.NewButton("Cancel", func() {
 		w.Hide()
@@ -156,6 +203,13 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 		widget.NewCard("Shortcut", "", widget.NewForm(
 			widget.NewFormItem("Generate and paste", form.shortcut),
 		)),
+		widget.NewCard("Templates", "", container.NewVBox(
+			widget.NewForm(
+				widget.NewFormItem("Saved template", form.templateSelect),
+				widget.NewFormItem("Template name", form.templateName),
+			),
+			container.NewHBox(loadTemplateButton, saveTemplateButton, deleteTemplateButton),
+		)),
 		container.NewHBox(layout.NewSpacer(), cancelButton, saveButton),
 		form.status,
 	)
@@ -174,24 +228,36 @@ func newSettingsForm() *settingsForm {
 	pasteShortcut := newShortcutCapture()
 	pasteShortcut.SetPlaceHolder(shortcut.Default())
 
+	templateName := widget.NewEntry()
+	templateName.SetPlaceHolder("Work login")
+
 	status := widget.NewLabel("")
 	status.Wrapping = fyne.TextWrapWord
 
 	return &settingsForm{
-		mode:      widget.NewSelect([]string{modePassphraseLabel, modeRandomLabel}, nil),
-		language:  widget.NewSelect(languageLabels(), nil),
-		minLength: minLength,
-		maxLength: maxLength,
-		lowercase: widget.NewCheck("Lowercase", nil),
-		uppercase: widget.NewCheck("Uppercase", nil),
-		numbers:   widget.NewCheck("Numbers", nil),
-		special:   widget.NewCheck("Special characters", nil),
-		shortcut:  pasteShortcut,
-		status:    status,
+		mode:           widget.NewSelect([]string{modePassphraseLabel, modeRandomLabel}, nil),
+		language:       widget.NewSelect(languageLabels(), nil),
+		minLength:      minLength,
+		maxLength:      maxLength,
+		lowercase:      widget.NewCheck("Lowercase", nil),
+		uppercase:      widget.NewCheck("Uppercase", nil),
+		numbers:        widget.NewCheck("Numbers", nil),
+		special:        widget.NewCheck("Special characters", nil),
+		shortcut:       pasteShortcut,
+		templateSelect: widget.NewSelect(nil, nil),
+		templateName:   templateName,
+		status:         status,
 	}
 }
 
-func (f *settingsForm) load(settings password.Settings, pasteShortcut string) {
+func (f *settingsForm) load(settings password.Settings, pasteShortcut string, templates []password.Template) {
+	f.loadPasswordSettings(settings)
+	f.shortcut.SetText(shortcut.Normalize(pasteShortcut))
+	f.loadTemplates(templates, "")
+	f.status.SetText("")
+}
+
+func (f *settingsForm) loadPasswordSettings(settings password.Settings) {
 	settings = settings.Normalize()
 
 	f.mode.SetSelected(labelForMode(settings.Mode))
@@ -202,12 +268,24 @@ func (f *settingsForm) load(settings password.Settings, pasteShortcut string) {
 	f.uppercase.SetChecked(settings.Uppercase)
 	f.numbers.SetChecked(settings.Numbers)
 	f.special.SetChecked(settings.Special)
-	f.shortcut.SetText(shortcut.Normalize(pasteShortcut))
-	f.status.SetText("")
 	f.setModeControlsEnabled(settings.Mode)
 }
 
 func (f *settingsForm) settings() (password.Settings, string, error) {
+	settings, err := f.passwordSettings()
+	if err != nil {
+		return settings, "", err
+	}
+
+	pasteShortcut, err := parseShortcut(f.shortcut.Text)
+	if err != nil {
+		return settings, "", err
+	}
+
+	return settings, pasteShortcut, nil
+}
+
+func (f *settingsForm) passwordSettings() (password.Settings, error) {
 	settings := password.Settings{
 		Mode:      modeFromLabel(f.mode.Selected),
 		Language:  languageFromLabel(f.language.Selected),
@@ -219,27 +297,29 @@ func (f *settingsForm) settings() (password.Settings, string, error) {
 
 	minLength, err := parseLength("minimum length", f.minLength.Text)
 	if err != nil {
-		return settings, "", err
+		return settings, err
 	}
 	settings.MinLength = minLength
 
 	maxLength, err := parseLength("maximum length", f.maxLength.Text)
 	if err != nil {
-		return settings, "", err
+		return settings, err
 	}
 	settings.MaxLength = maxLength
 
 	settings = settings.Normalize()
 	if err := settings.Validate(); err != nil {
-		return settings, "", err
+		return settings, err
 	}
 
-	pasteShortcut, err := parseShortcut(f.shortcut.Text)
-	if err != nil {
-		return settings, "", err
-	}
+	return settings, nil
+}
 
-	return settings, pasteShortcut, nil
+func (f *settingsForm) loadTemplates(templates []password.Template, selected string) {
+	names := templateNames(templates)
+	f.templateSelect.Options = names
+	f.templateSelect.SetSelected(selected)
+	f.templateSelect.Refresh()
 }
 
 func (f *settingsForm) setModeControlsEnabled(mode password.Mode) {
@@ -261,6 +341,30 @@ func parseShortcut(value string) (string, error) {
 		return "", fmt.Errorf("shortcut %s", err)
 	}
 	return parsed.String(), nil
+}
+
+func (u *UI) settingsSaved(form *settingsForm, message string) {
+	form.status.SetText(message)
+	if u.onSave != nil {
+		u.onSave()
+	}
+}
+
+func findTemplate(templates []password.Template, name string) (password.Template, bool) {
+	for _, template := range templates {
+		if template.Name == name {
+			return template, true
+		}
+	}
+	return password.Template{}, false
+}
+
+func templateNames(templates []password.Template) []string {
+	names := make([]string, len(templates))
+	for i, template := range templates {
+		names[i] = template.Name
+	}
+	return names
 }
 
 type shortcutCapture struct {

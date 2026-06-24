@@ -24,8 +24,9 @@ The tray menu also has a `Settings...` item. It opens a native Fyne settings win
 - minimum and maximum length
 - lowercase, uppercase, numbers, and special characters
 - the global shortcut that generates a new password and pastes it into the active app
+- custom named templates that can be copied from the tray menu without changing the main password settings
 
-The default paste shortcut is `Ctrl+Command+P` on macOS and `Ctrl+Windows+P` on Windows. Settings are saved as JSON in the user's OS config directory and are loaded again the next time GoPass starts. Passphrase words are stored as plain ASCII; accents are removed where needed so generated passwords stay compatible with strict password fields.
+The default paste shortcut is `Ctrl+Command+P` on macOS and `Ctrl+Windows+P` on Windows. Settings and templates are saved as JSON in the user's OS config directory and are loaded again the next time GoPass starts. Passphrase words are stored as plain ASCII; accents are removed where needed so generated passwords stay compatible with strict password fields.
 
 On macOS, GoPass may need Accessibility permission before it can paste into another app.
 

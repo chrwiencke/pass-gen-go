@@ -40,6 +40,9 @@ var passwordSettings *appsettings.Manager
 var passwordSettingsUI *settingsui.UI
 var pasteHotkey *hotkey.Manager
 var shutdownOnce sync.Once
+var templatesMenu *systray.MenuItem
+var templateMenuItemsMu sync.Mutex
+var templateMenuItems []*systray.MenuItem
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -53,7 +56,7 @@ func main() {
 	}
 	passwordSettings = settingsManager
 	pasteHotkey = hotkey.New(pastePassword)
-	passwordSettingsUI = settingsui.New(guiApp, settingsManager, configurePasteHotkey)
+	passwordSettingsUI = settingsui.New(guiApp, settingsManager, settingsSaved)
 
 	startTray, _ := systray.RunWithExternalLoop(onReady, onExit)
 	guiApp.Lifecycle().SetOnStarted(func() {
@@ -74,6 +77,8 @@ func onReady() {
 	systray.SetTooltip(appName + ": left-click to copy a password")
 
 	copyItem := systray.AddMenuItem("Copy password", "Copy a password")
+	templatesMenu = systray.AddMenuItem("Templates", "Copy a password using a template")
+	refreshTemplateMenu()
 	settingsItem := systray.AddMenuItem("Settings...", "Change password generator settings")
 	updateItem := systray.AddMenuItem("Update", "Update "+appName)
 	updateItem.Hide()
@@ -145,6 +150,14 @@ func copyPassword() {
 	// Do not log, display, or notify the actual password. It is only written to the clipboard.
 }
 
+func copyPasswordTemplate(template password.Template) {
+	if _, ok := generateAndCopyPasswordWithSettings(template.Settings); !ok {
+		return
+	}
+
+	systray.SetTooltip(fmt.Sprintf(appName+": %s copied at %s", template.Name, time.Now().Format("15:04:05")))
+}
+
 func pastePassword() {
 	if _, ok := generateAndCopyPassword(); !ok {
 		return
@@ -166,6 +179,10 @@ func generateAndCopyPassword() (string, bool) {
 		settings = passwordSettings.Current()
 	}
 
+	return generateAndCopyPasswordWithSettings(settings)
+}
+
+func generateAndCopyPasswordWithSettings(settings password.Settings) (string, bool) {
 	pw, err := password.GenerateWithSettings(settings)
 	if err != nil {
 		systray.SetTooltip(appName + ": could not generate password")
@@ -180,6 +197,46 @@ func generateAndCopyPassword() (string, bool) {
 	}
 
 	return pw, true
+}
+
+func refreshTemplateMenu() {
+	if templatesMenu == nil {
+		return
+	}
+
+	templateMenuItemsMu.Lock()
+	defer templateMenuItemsMu.Unlock()
+
+	for _, item := range templateMenuItems {
+		item.Remove()
+	}
+	templateMenuItems = nil
+
+	templates := []password.Template(nil)
+	if passwordSettings != nil {
+		templates = passwordSettings.Templates()
+	}
+	if len(templates) == 0 {
+		templatesMenu.Disable()
+		return
+	}
+
+	templatesMenu.Enable()
+	for _, template := range templates {
+		template := template
+		item := templatesMenu.AddSubMenuItem(template.Name, "Copy a password using "+template.Name)
+		templateMenuItems = append(templateMenuItems, item)
+		go func() {
+			for range item.ClickedCh {
+				copyPasswordTemplate(template)
+			}
+		}()
+	}
+}
+
+func settingsSaved() {
+	configurePasteHotkey()
+	refreshTemplateMenu()
 }
 
 func configurePasteHotkey() {
