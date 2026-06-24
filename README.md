@@ -116,6 +116,18 @@ $env:VERSION = "1.2.3"
 ./scripts/build-windows.ps1
 ```
 
+If your editor or a local cross-compile reports that `github.com/go-gl/gl/v2.1/gl`
+has no Go files for `windows,amd64`, the Windows target is being checked without
+CGO. For a real Windows build, use the PowerShell script above or GitHub Actions;
+both enable CGO and use MinGW-w64. For editor diagnostics only, either unset the
+Windows target (`GOOS`/`GOARCH`) or add Fyne's in-memory app tag:
+
+```bash
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -tags ci ./cmd/gopass
+```
+
+Do not use that `ci` tag for release builds.
+
 ## Build both from macOS/Linux shell
 
 ```bash
