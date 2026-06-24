@@ -290,12 +290,19 @@ func (m *updateMenu) start() {
 }
 
 func (m *updateMenu) shouldRefresh() bool {
+	if m.installing.Load() || m.checking.Load() {
+		return false
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return time.Since(m.lastCheck) >= 30*time.Minute
 }
 
 func (m *updateMenu) check() {
+	if m.installing.Load() {
+		return
+	}
 	if !m.checking.CompareAndSwap(false, true) {
 		return
 	}
@@ -315,6 +322,10 @@ func (m *updateMenu) check() {
 	})
 	if err != nil {
 		log.Printf("update check failed: %v", err)
+		return
+	}
+
+	if m.installing.Load() {
 		return
 	}
 
@@ -370,10 +381,20 @@ func (m *updateMenu) handleClicks() {
 			m.available = nil
 			m.mu.Unlock()
 
-			m.item.SetTitle("Updated to " + update.Version + " - restart")
-			m.item.SetTooltip("Restart " + appName + " to use " + update.Version)
+			m.item.SetTitle("Restarting...")
+			m.item.SetTooltip("Restarting " + appName + " " + update.Version)
 			m.item.Disable()
-			systray.SetTooltip(appName + ": updated to " + update.Version + "; restart to use it")
+
+			if err := relaunchApp(); err != nil {
+				log.Printf("relaunch after update failed: %v", err)
+				m.item.SetTitle("Updated to " + update.Version)
+				m.item.SetTooltip("Restart " + appName + " to use " + update.Version)
+				systray.SetTooltip(appName + ": updated to " + update.Version + "; restart failed")
+				return
+			}
+
+			systray.SetTooltip(appName + ": updated to " + update.Version + "; restarting")
+			quitApp()
 		}()
 	}
 }

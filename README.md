@@ -167,7 +167,7 @@ GoPass-macos-arm64.zip
 GoPass-windows-amd64.zip
 ```
 
-Upload the matching `.sha256` file next to each raw binary asset for checksum verification. After the user right-clicks the tray/menu-bar icon and clicks `Update`, the app downloads the release asset, applies it, and asks for a restart so the new version is used.
+Upload the matching `.sha256` file next to each raw binary asset for checksum verification. After the user right-clicks the tray/menu-bar icon and clicks `Update`, the app downloads the release asset, applies it, and restarts automatically so the new version is used.
 
 On macOS, Accessibility permission is tied to the app's code signing identity. Ad-hoc signed releases can still require removing and re-adding GoPass in System Settings after each update because every build has a different code identity. To keep the paste shortcut trusted across updates, sign tagged releases with the same Developer ID Application certificate. The GitHub workflow will use these repository secrets when all three are present:
 
