@@ -109,7 +109,7 @@ func (u *UI) closeOnUIThread() {
 
 func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 	w := u.app.NewWindow("GoPass Settings")
-	w.Resize(fyne.NewSize(500, 500))
+	w.Resize(fyne.NewSize(680, 460))
 	w.SetCloseIntercept(func() {
 		w.Hide()
 	})
@@ -188,33 +188,53 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 		w.Hide()
 	})
 
-	content := container.NewVBox(
-		widget.NewCard("Password", "", widget.NewForm(
+	generatorTab := container.NewVBox(
+		widget.NewCard("Password format", "Choose what GoPass generates by default.", widget.NewForm(
 			widget.NewFormItem("Type", form.mode),
-			widget.NewFormItem("Language", form.language),
 			widget.NewFormItem("Minimum length", form.minLength),
 			widget.NewFormItem("Maximum length", form.maxLength),
 		)),
-		widget.NewCard("Characters", "", container.NewVBox(
+		widget.NewCard("Passphrase", "Used when the type is Passphrase.", widget.NewForm(
+			widget.NewFormItem("Word language", form.language),
+		)),
+		widget.NewCard("Characters", "Choose which character groups can appear.", container.NewGridWithColumns(2,
 			form.lowercase,
 			form.uppercase,
 			form.numbers,
 			form.special,
 		)),
-		widget.NewCard("Shortcut", "", widget.NewForm(
+	)
+
+	shortcutTab := container.NewVBox(
+		widget.NewCard("Paste shortcut", "Press the key combination to capture it.", widget.NewForm(
 			widget.NewFormItem("Generate and paste", form.shortcut),
 		)),
-		widget.NewCard("Templates", "", container.NewVBox(
+	)
+
+	templatesTab := container.NewVBox(
+		widget.NewCard("Saved templates", "Save reusable generator settings for the tray menu.", container.NewVBox(
 			widget.NewForm(
-				widget.NewFormItem("Saved template", form.templateSelect),
-				widget.NewFormItem("Template name", form.templateName),
+				widget.NewFormItem("Choose template", form.templateSelect),
+				widget.NewFormItem("Name", form.templateName),
 			),
 			container.NewHBox(loadTemplateButton, saveTemplateButton, deleteTemplateButton),
 		)),
-		container.NewHBox(layout.NewSpacer(), cancelButton, saveButton),
-		form.status,
 	)
 
+	tabs := container.NewAppTabs(
+		container.NewTabItem("Generator", generatorTab),
+		container.NewTabItem("Shortcut", shortcutTab),
+		container.NewTabItem("Templates", templatesTab),
+	)
+	tabs.SetTabLocation(container.TabLocationTop)
+
+	footer := container.NewVBox(
+		widget.NewSeparator(),
+		form.status,
+		container.NewHBox(layout.NewSpacer(), cancelButton, saveButton),
+	)
+
+	content := container.NewBorder(nil, footer, nil, nil, tabs)
 	w.SetContent(container.NewPadded(content))
 	return w, form
 }
