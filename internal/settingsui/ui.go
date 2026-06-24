@@ -135,6 +135,7 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 		}
 
 		u.settingsSaved(form, "Settings saved")
+		w.Hide()
 	})
 	saveButton.Importance = widget.HighImportance
 
