@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"gopass/internal/clipboard"
+	"gopass/internal/hotkey"
 	"gopass/internal/password"
+	"gopass/internal/paste"
 	appsettings "gopass/internal/settings"
 	"gopass/internal/settingsui"
 	"gopass/internal/updater"
@@ -36,6 +38,7 @@ var version = "dev"
 var guiApp fyne.App
 var passwordSettings *appsettings.Manager
 var passwordSettingsUI *settingsui.UI
+var pasteHotkey *hotkey.Manager
 var shutdownOnce sync.Once
 
 func main() {
@@ -49,7 +52,8 @@ func main() {
 		log.Printf("settings load failed: %v", err)
 	}
 	passwordSettings = settingsManager
-	passwordSettingsUI = settingsui.New(guiApp, settingsManager)
+	pasteHotkey = hotkey.New(pastePassword)
+	passwordSettingsUI = settingsui.New(guiApp, settingsManager, configurePasteHotkey)
 
 	startTray, _ := systray.RunWithExternalLoop(onReady, onExit)
 	guiApp.Lifecycle().SetOnStarted(func() {
@@ -78,6 +82,7 @@ func onReady() {
 
 	updateMenu := newUpdateMenu(updateItem)
 	updateMenu.start()
+	configurePasteHotkey()
 
 	// Left-clicking the macOS menu-bar icon or Windows taskbar tray icon copies a new password.
 	systray.SetOnTapped(func() {
@@ -119,6 +124,9 @@ func quitApp() {
 		if passwordSettingsUI != nil {
 			passwordSettingsUI.Close()
 		}
+		if pasteHotkey != nil {
+			pasteHotkey.Close()
+		}
 		if guiApp != nil {
 			fyne.Do(guiApp.Quit)
 			return
@@ -128,6 +136,31 @@ func quitApp() {
 }
 
 func copyPassword() {
+	if _, ok := generateAndCopyPassword(); !ok {
+		return
+	}
+
+	systray.SetTooltip(fmt.Sprintf(appName+": password copied at %s", time.Now().Format("15:04:05")))
+
+	// Do not log, display, or notify the actual password. It is only written to the clipboard.
+}
+
+func pastePassword() {
+	if _, ok := generateAndCopyPassword(); !ok {
+		return
+	}
+
+	time.Sleep(80 * time.Millisecond)
+	if err := paste.Send(); err != nil {
+		systray.SetTooltip(appName + ": could not paste password")
+		log.Printf("paste failed: %v", err)
+		return
+	}
+
+	systray.SetTooltip(fmt.Sprintf(appName+": password pasted at %s", time.Now().Format("15:04:05")))
+}
+
+func generateAndCopyPassword() (string, bool) {
 	settings := password.DefaultSettings()
 	if passwordSettings != nil {
 		settings = passwordSettings.Current()
@@ -137,18 +170,27 @@ func copyPassword() {
 	if err != nil {
 		systray.SetTooltip(appName + ": could not generate password")
 		log.Printf("password generation failed: %v", err)
-		return
+		return "", false
 	}
 
 	if err := clipboard.CopyText(pw); err != nil {
 		systray.SetTooltip(appName + ": clipboard is unavailable")
 		log.Printf("clipboard copy failed: %v", err)
-		return
+		return "", false
 	}
 
-	systray.SetTooltip(fmt.Sprintf(appName+": password copied at %s", time.Now().Format("15:04:05")))
+	return pw, true
+}
 
-	// Do not log, display, or notify the actual password. It is only written to the clipboard.
+func configurePasteHotkey() {
+	if pasteHotkey == nil || passwordSettings == nil {
+		return
+	}
+	if err := pasteHotkey.SetShortcut(passwordSettings.PasteShortcut()); err != nil {
+		systray.SetTooltip(appName + ": paste shortcut unavailable")
+		log.Printf("paste shortcut registration failed: %v", err)
+		return
+	}
 }
 
 func openSettings() {

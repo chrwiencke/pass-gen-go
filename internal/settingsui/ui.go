@@ -8,6 +8,7 @@ import (
 
 	"gopass/internal/password"
 	appsettings "gopass/internal/settings"
+	"gopass/internal/shortcut"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -23,6 +24,7 @@ const (
 type UI struct {
 	app     fyne.App
 	manager *appsettings.Manager
+	onSave  func()
 
 	mu     sync.Mutex
 	window fyne.Window
@@ -38,13 +40,15 @@ type settingsForm struct {
 	uppercase *widget.Check
 	numbers   *widget.Check
 	special   *widget.Check
+	shortcut  *widget.Entry
 	status    *widget.Label
 }
 
-func New(app fyne.App, manager *appsettings.Manager) *UI {
+func New(app fyne.App, manager *appsettings.Manager, onSave func()) *UI {
 	return &UI{
 		app:     app,
 		manager: manager,
+		onSave:  onSave,
 	}
 }
 
@@ -80,7 +84,7 @@ func (u *UI) openOnUIThread() {
 		u.window, u.form = u.buildWindow()
 	}
 
-	u.form.load(u.manager.Current())
+	u.form.load(u.manager.Current(), u.manager.PasteShortcut())
 	u.window.Show()
 	u.window.RequestFocus()
 }
@@ -101,7 +105,7 @@ func (u *UI) closeOnUIThread() {
 
 func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 	w := u.app.NewWindow("GoPass Settings")
-	w.Resize(fyne.NewSize(460, 420))
+	w.Resize(fyne.NewSize(500, 500))
 	w.SetCloseIntercept(func() {
 		w.Hide()
 	})
@@ -112,18 +116,21 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 	}
 
 	saveButton := widget.NewButton("Save", func() {
-		settings, err := form.settings()
+		settings, pasteShortcut, err := form.settings()
 		if err != nil {
 			form.status.SetText(err.Error())
 			return
 		}
 
-		if err := u.manager.Save(settings); err != nil {
+		if err := u.manager.Save(settings, pasteShortcut); err != nil {
 			form.status.SetText("Could not save settings: " + err.Error())
 			return
 		}
 
 		form.status.SetText("Settings saved")
+		if u.onSave != nil {
+			u.onSave()
+		}
 	})
 	saveButton.Importance = widget.HighImportance
 
@@ -144,6 +151,9 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 			form.numbers,
 			form.special,
 		)),
+		widget.NewCard("Shortcut", "", widget.NewForm(
+			widget.NewFormItem("Generate and paste", form.shortcut),
+		)),
 		container.NewHBox(layout.NewSpacer(), cancelButton, saveButton),
 		form.status,
 	)
@@ -159,6 +169,9 @@ func newSettingsForm() *settingsForm {
 	maxLength := widget.NewEntry()
 	maxLength.SetPlaceHolder(strconv.Itoa(password.MaxLength))
 
+	pasteShortcut := widget.NewEntry()
+	pasteShortcut.SetPlaceHolder(shortcut.Default())
+
 	status := widget.NewLabel("")
 	status.Wrapping = fyne.TextWrapWord
 
@@ -171,11 +184,12 @@ func newSettingsForm() *settingsForm {
 		uppercase: widget.NewCheck("Uppercase", nil),
 		numbers:   widget.NewCheck("Numbers", nil),
 		special:   widget.NewCheck("Special characters", nil),
+		shortcut:  pasteShortcut,
 		status:    status,
 	}
 }
 
-func (f *settingsForm) load(settings password.Settings) {
+func (f *settingsForm) load(settings password.Settings, pasteShortcut string) {
 	settings = settings.Normalize()
 
 	f.mode.SetSelected(labelForMode(settings.Mode))
@@ -186,11 +200,12 @@ func (f *settingsForm) load(settings password.Settings) {
 	f.uppercase.SetChecked(settings.Uppercase)
 	f.numbers.SetChecked(settings.Numbers)
 	f.special.SetChecked(settings.Special)
+	f.shortcut.SetText(shortcut.Normalize(pasteShortcut))
 	f.status.SetText("")
 	f.setModeControlsEnabled(settings.Mode)
 }
 
-func (f *settingsForm) settings() (password.Settings, error) {
+func (f *settingsForm) settings() (password.Settings, string, error) {
 	settings := password.Settings{
 		Mode:      modeFromLabel(f.mode.Selected),
 		Language:  languageFromLabel(f.language.Selected),
@@ -202,22 +217,27 @@ func (f *settingsForm) settings() (password.Settings, error) {
 
 	minLength, err := parseLength("minimum length", f.minLength.Text)
 	if err != nil {
-		return settings, err
+		return settings, "", err
 	}
 	settings.MinLength = minLength
 
 	maxLength, err := parseLength("maximum length", f.maxLength.Text)
 	if err != nil {
-		return settings, err
+		return settings, "", err
 	}
 	settings.MaxLength = maxLength
 
 	settings = settings.Normalize()
 	if err := settings.Validate(); err != nil {
-		return settings, err
+		return settings, "", err
 	}
 
-	return settings, nil
+	pasteShortcut, err := parseShortcut(f.shortcut.Text)
+	if err != nil {
+		return settings, "", err
+	}
+
+	return settings, pasteShortcut, nil
 }
 
 func (f *settingsForm) setModeControlsEnabled(mode password.Mode) {
@@ -226,6 +246,19 @@ func (f *settingsForm) setModeControlsEnabled(mode password.Mode) {
 		return
 	}
 	f.language.Enable()
+}
+
+func parseShortcut(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = shortcut.Default()
+	}
+
+	parsed, err := shortcut.ParseCurrentPlatform(value)
+	if err != nil {
+		return "", fmt.Errorf("shortcut %s", err)
+	}
+	return parsed.String(), nil
 }
 
 func parseLength(label, value string) (int, error) {

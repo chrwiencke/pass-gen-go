@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"gopass/internal/password"
+	"gopass/internal/shortcut"
 )
 
 const (
@@ -20,11 +21,37 @@ const (
 type Manager struct {
 	mu    sync.RWMutex
 	path  string
-	value password.Settings
+	value Settings
+}
+
+type Settings struct {
+	password.Settings
+	PasteShortcut string `json:"pasteShortcut"`
+}
+
+func DefaultSettings() Settings {
+	return Settings{
+		Settings:      password.DefaultSettings(),
+		PasteShortcut: shortcut.Default(),
+	}
+}
+
+func (s Settings) Normalize() Settings {
+	s.Settings = s.Settings.Normalize()
+	s.PasteShortcut = shortcut.Normalize(s.PasteShortcut)
+	return s
+}
+
+func (s Settings) Validate() error {
+	if err := s.Settings.Validate(); err != nil {
+		return err
+	}
+	_, err := shortcut.ParseCurrentPlatform(s.PasteShortcut)
+	return err
 }
 
 func NewManager() (*Manager, error) {
-	value := password.DefaultSettings()
+	value := DefaultSettings()
 
 	path, err := defaultPath()
 	if err != nil {
@@ -44,7 +71,7 @@ func NewManager() (*Manager, error) {
 		return manager, err
 	}
 
-	var loaded password.Settings
+	var loaded Settings
 	if err := json.Unmarshal(data, &loaded); err != nil {
 		return manager, fmt.Errorf("load settings: %w", err)
 	}
@@ -61,10 +88,20 @@ func NewManager() (*Manager, error) {
 func (m *Manager) Current() password.Settings {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.value
+	return m.value.Settings
 }
 
-func (m *Manager) Save(next password.Settings) error {
+func (m *Manager) PasteShortcut() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.value.PasteShortcut
+}
+
+func (m *Manager) Save(nextPassword password.Settings, pasteShortcut string) error {
+	next := Settings{
+		Settings:      nextPassword,
+		PasteShortcut: pasteShortcut,
+	}
 	next = next.Normalize()
 	if err := next.Validate(); err != nil {
 		return err
