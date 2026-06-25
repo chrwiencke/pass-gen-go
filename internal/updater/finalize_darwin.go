@@ -219,6 +219,9 @@ func extractAppBundle(files []*zip.File, appRoot, targetAppDir string) error {
 		if name != appRoot && !strings.HasPrefix(name, prefix) {
 			continue
 		}
+		if name == appRoot {
+			continue
+		}
 
 		rel := strings.TrimPrefix(name, prefix)
 		if rel == "" {
