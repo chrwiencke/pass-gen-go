@@ -45,6 +45,7 @@ type settingsForm struct {
 	uppercase                *widget.Check
 	numbers                  *widget.Check
 	special                  *widget.Check
+	automaticUpdates         *widget.Check
 	shortcut                 *shortcutCapture
 	templateSelect           *widget.Select
 	templateName             *widget.Entry
@@ -91,7 +92,7 @@ func (u *UI) openOnUIThread() {
 		u.window, u.form = u.buildWindow()
 	}
 
-	u.form.load(u.manager.Current(), u.manager.PasteShortcut(), u.manager.Templates())
+	u.form.load(u.manager.Current(), u.manager.PasteShortcut(), u.manager.AutomaticUpdates(), u.manager.Templates())
 	u.window.Show()
 	u.window.RequestFocus()
 }
@@ -126,13 +127,13 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 	}
 
 	saveButton := widget.NewButton("Save", func() {
-		settings, pasteShortcut, err := form.settings()
+		settings, pasteShortcut, automaticUpdates, err := form.settings()
 		if err != nil {
 			form.status.SetText(err.Error())
 			return
 		}
 
-		if err := u.manager.Save(settings, pasteShortcut); err != nil {
+		if err := u.manager.Save(settings, pasteShortcut, automaticUpdates); err != nil {
 			form.status.SetText("Could not save settings: " + err.Error())
 			return
 		}
@@ -214,6 +215,9 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 		widget.NewCard("Paste shortcut", "Press the key combination to capture it.", widget.NewForm(
 			widget.NewFormItem("Generate and paste", form.shortcut),
 		)),
+		widget.NewCard("Updates", "Allow GoPass to check for new releases in the background.", widget.NewForm(
+			widget.NewFormItem("Automatic updates", form.automaticUpdates),
+		)),
 	)
 
 	templatesTab := container.NewVBox(
@@ -292,6 +296,7 @@ func newSettingsForm() *settingsForm {
 		uppercase:                widget.NewCheck("Uppercase", nil),
 		numbers:                  widget.NewCheck("Numbers", nil),
 		special:                  widget.NewCheck("Special characters", nil),
+		automaticUpdates:         widget.NewCheck("Check for updates automatically", nil),
 		shortcut:                 pasteShortcut,
 		templateSelect:           widget.NewSelect(nil, nil),
 		templateName:             templateName,
@@ -299,9 +304,10 @@ func newSettingsForm() *settingsForm {
 	}
 }
 
-func (f *settingsForm) load(settings password.Settings, pasteShortcut string, templates []password.Template) {
+func (f *settingsForm) load(settings password.Settings, pasteShortcut string, automaticUpdates bool, templates []password.Template) {
 	f.loadPasswordSettings(settings)
 	f.shortcut.SetText(shortcut.Normalize(pasteShortcut))
+	f.automaticUpdates.SetChecked(automaticUpdates)
 	f.loadTemplates(templates, "")
 	f.status.SetText("")
 }
@@ -320,18 +326,18 @@ func (f *settingsForm) loadPasswordSettings(settings password.Settings) {
 	f.setModeControlsEnabled(settings.Mode)
 }
 
-func (f *settingsForm) settings() (password.Settings, string, error) {
+func (f *settingsForm) settings() (password.Settings, string, bool, error) {
 	settings, err := f.passwordSettings()
 	if err != nil {
-		return settings, "", err
+		return settings, "", false, err
 	}
 
 	pasteShortcut, err := parseShortcut(f.shortcut.Text)
 	if err != nil {
-		return settings, "", err
+		return settings, "", false, err
 	}
 
-	return settings, pasteShortcut, nil
+	return settings, pasteShortcut, f.automaticUpdates.Checked, nil
 }
 
 func (f *settingsForm) passwordSettings() (password.Settings, error) {

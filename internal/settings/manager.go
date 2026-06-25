@@ -27,14 +27,16 @@ type Manager struct {
 
 type Settings struct {
 	password.Settings
-	PasteShortcut string              `json:"pasteShortcut"`
-	Templates     []password.Template `json:"templates,omitempty"`
+	PasteShortcut    string              `json:"pasteShortcut"`
+	AutomaticUpdates bool                `json:"automaticUpdates"`
+	Templates        []password.Template `json:"templates,omitempty"`
 }
 
 func DefaultSettings() Settings {
 	return Settings{
-		Settings:      password.DefaultSettings(),
-		PasteShortcut: shortcut.Default(),
+		Settings:         password.DefaultSettings(),
+		PasteShortcut:    shortcut.Default(),
+		AutomaticUpdates: false,
 	}
 }
 
@@ -103,21 +105,28 @@ func (m *Manager) PasteShortcut() string {
 	return m.value.PasteShortcut
 }
 
+func (m *Manager) AutomaticUpdates() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.value.AutomaticUpdates
+}
+
 func (m *Manager) Templates() []password.Template {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return cloneTemplates(m.value.Templates)
 }
 
-func (m *Manager) Save(nextPassword password.Settings, pasteShortcut string) error {
+func (m *Manager) Save(nextPassword password.Settings, pasteShortcut string, automaticUpdates bool) error {
 	m.mu.RLock()
 	templates := cloneTemplates(m.value.Templates)
 	m.mu.RUnlock()
 
 	next := Settings{
-		Settings:      nextPassword,
-		PasteShortcut: pasteShortcut,
-		Templates:     templates,
+		Settings:         nextPassword,
+		PasteShortcut:    pasteShortcut,
+		AutomaticUpdates: automaticUpdates,
+		Templates:        templates,
 	}
 	return m.saveSettings(next)
 }

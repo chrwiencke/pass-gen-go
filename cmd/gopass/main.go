@@ -39,6 +39,7 @@ var guiApp fyne.App
 var passwordSettings *appsettings.Manager
 var passwordSettingsUI *settingsui.UI
 var pasteHotkey *hotkey.Manager
+var appUpdateMenu *updateMenu
 var shutdownOnce sync.Once
 var templatesMenu *systray.MenuItem
 var templateMenuItemsMu sync.Mutex
@@ -85,8 +86,8 @@ func onReady() {
 	systray.AddSeparator()
 	quitItem := systray.AddMenuItem("Quit", "Quit "+appName)
 
-	updateMenu := newUpdateMenu(updateItem)
-	updateMenu.start()
+	appUpdateMenu = newUpdateMenu(updateItem)
+	appUpdateMenu.start()
 	configurePasteHotkey()
 
 	// Left-clicking the macOS menu-bar icon or Windows taskbar tray icon copies a new password.
@@ -237,6 +238,7 @@ func refreshTemplateMenu() {
 func settingsSaved() {
 	configurePasteHotkey()
 	refreshTemplateMenu()
+	refreshUpdateMenu()
 }
 
 func configurePasteHotkey() {
@@ -263,6 +265,16 @@ func openSettings() {
 	systray.SetTooltip(appName + ": settings opened")
 }
 
+func refreshUpdateMenu() {
+	if appUpdateMenu != nil {
+		appUpdateMenu.preferenceChanged()
+	}
+}
+
+func automaticUpdatesEnabled() bool {
+	return passwordSettings != nil && passwordSettings.AutomaticUpdates()
+}
+
 type updateMenu struct {
 	item       *systray.MenuItem
 	mu         sync.RWMutex
@@ -278,7 +290,9 @@ func newUpdateMenu(item *systray.MenuItem) *updateMenu {
 
 func (m *updateMenu) start() {
 	go m.handleClicks()
-	go m.check()
+	if automaticUpdatesEnabled() {
+		go m.check()
+	}
 
 	go func() {
 		for range systray.TrayOpenedCh {
@@ -290,6 +304,9 @@ func (m *updateMenu) start() {
 }
 
 func (m *updateMenu) shouldRefresh() bool {
+	if !automaticUpdatesEnabled() {
+		return false
+	}
 	if m.installing.Load() || m.checking.Load() {
 		return false
 	}
@@ -299,7 +316,31 @@ func (m *updateMenu) shouldRefresh() bool {
 	return time.Since(m.lastCheck) >= 30*time.Minute
 }
 
+func (m *updateMenu) preferenceChanged() {
+	if automaticUpdatesEnabled() {
+		go m.check()
+		return
+	}
+	m.clear()
+}
+
+func (m *updateMenu) clear() {
+	if m.installing.Load() {
+		return
+	}
+	m.mu.Lock()
+	m.available = nil
+	m.mu.Unlock()
+	m.item.SetTitle("Update")
+	m.item.SetTooltip("Update " + appName)
+	m.item.Hide()
+}
+
 func (m *updateMenu) check() {
+	if !automaticUpdatesEnabled() {
+		m.clear()
+		return
+	}
 	if m.installing.Load() {
 		return
 	}
@@ -322,6 +363,11 @@ func (m *updateMenu) check() {
 	})
 	if err != nil {
 		log.Printf("update check failed: %v", err)
+		return
+	}
+
+	if !automaticUpdatesEnabled() {
+		m.clear()
 		return
 	}
 

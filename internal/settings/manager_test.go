@@ -73,7 +73,7 @@ func TestSavePreservesTemplates(t *testing.T) {
 	mainSettings.Mode = password.ModeRandom
 	mainSettings.MinLength = 10
 	mainSettings.MaxLength = 10
-	if err := manager.Save(mainSettings, manager.PasteShortcut()); err != nil {
+	if err := manager.Save(mainSettings, manager.PasteShortcut(), manager.AutomaticUpdates()); err != nil {
 		t.Fatalf("Save() returned error: %v", err)
 	}
 
@@ -83,5 +83,31 @@ func TestSavePreservesTemplates(t *testing.T) {
 	}
 	if templates[0].Name != "English" {
 		t.Fatalf("template name = %q, want English", templates[0].Name)
+	}
+}
+
+func TestAutomaticUpdatesDefaultDisabled(t *testing.T) {
+	settings := DefaultSettings()
+	if settings.AutomaticUpdates {
+		t.Fatal("DefaultSettings().AutomaticUpdates = true, want false")
+	}
+
+	manager := &Manager{value: settings}
+	if manager.AutomaticUpdates() {
+		t.Fatal("AutomaticUpdates() = true, want false")
+	}
+}
+
+func TestSavePersistsAutomaticUpdates(t *testing.T) {
+	manager := &Manager{
+		path:  filepath.Join(t.TempDir(), settingsFile),
+		value: DefaultSettings(),
+	}
+
+	if err := manager.Save(password.DefaultSettings(), manager.PasteShortcut(), true); err != nil {
+		t.Fatalf("Save() returned error: %v", err)
+	}
+	if !manager.AutomaticUpdates() {
+		t.Fatal("AutomaticUpdates() = false, want true")
 	}
 }
