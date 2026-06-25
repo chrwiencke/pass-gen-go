@@ -14,8 +14,9 @@ const (
 	// MaxLength is 21 because the password must be under 22 characters long.
 	MaxLength = 21
 
-	MinAllowedLength = 4
-	MaxAllowedLength = 128
+	MinAllowedLength       = 4
+	RandomMinAllowedLength = 1
+	MaxAllowedLength       = 128
 )
 
 type RandomIntFunc func(maxExclusive int) (int, error)
@@ -119,9 +120,6 @@ func (s Settings) Validate() error {
 	if !isSupportedLanguage(s.Language) {
 		return fmt.Errorf("unsupported passphrase language %q", s.Language)
 	}
-	if s.MinLength < MinAllowedLength {
-		return fmt.Errorf("minimum length must be at least %d", MinAllowedLength)
-	}
 	if s.MaxLength > MaxAllowedLength {
 		return fmt.Errorf("maximum length must be at most %d", MaxAllowedLength)
 	}
@@ -131,6 +129,9 @@ func (s Settings) Validate() error {
 
 	switch s.Mode {
 	case ModePassphrase:
+		if s.MinLength < MinAllowedLength {
+			return fmt.Errorf("minimum length must be at least %d", MinAllowedLength)
+		}
 		if !s.Lowercase && !s.Uppercase {
 			return fmt.Errorf("passphrases need lowercase, uppercase, or both enabled")
 		}
@@ -138,12 +139,12 @@ func (s Settings) Validate() error {
 			return fmt.Errorf("passphrase word list must contain at least two words")
 		}
 	case ModeRandom:
+		if s.MinLength < RandomMinAllowedLength {
+			return fmt.Errorf("minimum length must be at least %d", RandomMinAllowedLength)
+		}
 		groups := randomCharacterGroups(s)
 		if len(groups) == 0 {
 			return fmt.Errorf("random passwords need at least one character group enabled")
-		}
-		if len(groups) > s.MaxLength {
-			return fmt.Errorf("maximum length must be at least %d for the selected character groups", len(groups))
 		}
 	}
 
@@ -321,23 +322,20 @@ func hasLengthSumInRange(sums map[int]bool, minSum, maxSum int) bool {
 
 func generateRandomWithRand(settings Settings, nextInt RandomIntFunc) (string, error) {
 	groups := randomCharacterGroups(settings)
-	minLength := settings.MinLength
-	if minLength < len(groups) {
-		minLength = len(groups)
-	}
-
-	length, err := randBetween(nextInt, minLength, settings.MaxLength)
+	length, err := randBetween(nextInt, settings.MinLength, settings.MaxLength)
 	if err != nil {
 		return "", err
 	}
 
 	chars := make([]byte, 0, length)
-	for _, group := range groups {
-		idx, err := nextInt(len(group))
-		if err != nil {
-			return "", err
+	if length >= len(groups) {
+		for _, group := range groups {
+			idx, err := nextInt(len(group))
+			if err != nil {
+				return "", err
+			}
+			chars = append(chars, group[idx])
 		}
-		chars = append(chars, group[idx])
 	}
 
 	all := strings.Join(groups, "")

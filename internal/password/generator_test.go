@@ -158,6 +158,27 @@ func TestGenerateRandomPasswordUsesSelectedGroups(t *testing.T) {
 	assertMatches(t, pw, `[!@#$%^&*_\-+=?]`)
 }
 
+func TestGenerateRandomPasswordSupportsSingleCharacterLength(t *testing.T) {
+	settings := Settings{
+		Mode:      ModeRandom,
+		Language:  LanguageNorwegian,
+		MinLength: 1,
+		MaxLength: 1,
+		Lowercase: true,
+		Uppercase: true,
+		Numbers:   true,
+		Special:   true,
+	}
+
+	pw, err := GenerateWithSettings(settings)
+	if err != nil {
+		t.Fatalf("GenerateWithSettings() returned error: %v", err)
+	}
+	if len(pw) != 1 {
+		t.Fatalf("password %q length is %d, want 1", pw, len(pw))
+	}
+}
+
 func TestValidateRejectsRandomPasswordWithoutCharacters(t *testing.T) {
 	settings := DefaultSettings()
 	settings.Mode = ModeRandom

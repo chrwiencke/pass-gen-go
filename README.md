@@ -21,7 +21,7 @@ The tray menu also has a `Settings...` item. It opens a native Fyne settings win
 
 - passphrase or random password
 - major European passphrase languages: Czech, Danish, Dutch, English, Finnish, French, German, Hungarian, Italian, Norwegian, Polish, Portuguese, Romanian, Spanish, and Swedish
-- minimum and maximum length
+- minimum and maximum length for passphrases, or a fixed length slider for random passwords
 - lowercase, uppercase, numbers, and special characters
 - the global shortcut that generates a new password and pastes it into the active app
 - custom named templates that can be copied from the tray menu without changing the main password settings

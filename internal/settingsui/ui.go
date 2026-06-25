@@ -34,18 +34,22 @@ type UI struct {
 }
 
 type settingsForm struct {
-	mode           *widget.Select
-	language       *widget.Select
-	minLength      *widget.Entry
-	maxLength      *widget.Entry
-	lowercase      *widget.Check
-	uppercase      *widget.Check
-	numbers        *widget.Check
-	special        *widget.Check
-	shortcut       *shortcutCapture
-	templateSelect *widget.Select
-	templateName   *widget.Entry
-	status         *widget.Label
+	mode                     *widget.Select
+	language                 *widget.Select
+	minLength                *widget.Entry
+	maxLength                *widget.Entry
+	randomLength             *widget.Slider
+	randomLengthText         *widget.Label
+	passphraseLengthControls fyne.CanvasObject
+	randomLengthControls     fyne.CanvasObject
+	lowercase                *widget.Check
+	uppercase                *widget.Check
+	numbers                  *widget.Check
+	special                  *widget.Check
+	shortcut                 *shortcutCapture
+	templateSelect           *widget.Select
+	templateName             *widget.Entry
+	status                   *widget.Label
 }
 
 func New(app fyne.App, manager *appsettings.Manager, onSave func()) *UI {
@@ -191,8 +195,10 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 	generatorTab := container.NewVBox(
 		widget.NewCard("Password format", "Choose what GoPass generates by default.", widget.NewForm(
 			widget.NewFormItem("Type", form.mode),
-			widget.NewFormItem("Minimum length", form.minLength),
-			widget.NewFormItem("Maximum length", form.maxLength),
+		)),
+		widget.NewCard("Length", "", container.NewVBox(
+			form.passphraseLengthControls,
+			form.randomLengthControls,
 		)),
 		widget.NewCard("Passphrase", "Used when the type is Passphrase.", widget.NewForm(
 			widget.NewFormItem("Word language", form.language),
@@ -246,6 +252,23 @@ func newSettingsForm() *settingsForm {
 	maxLength := widget.NewEntry()
 	maxLength.SetPlaceHolder(strconv.Itoa(password.MaxLength))
 
+	randomLength := widget.NewSlider(float64(password.RandomMinAllowedLength), float64(password.MaxAllowedLength))
+	randomLength.Step = 1
+	randomLengthText := widget.NewLabel("")
+	randomLength.OnChanged = func(value float64) {
+		randomLengthText.SetText(characterCountLabel(sliderLength(value)))
+	}
+	randomLength.SetValue(float64(password.MaxLength))
+
+	passphraseLengthControls := widget.NewForm(
+		widget.NewFormItem("Minimum length", minLength),
+		widget.NewFormItem("Maximum length", maxLength),
+	)
+	randomLengthControls := container.NewVBox(
+		widget.NewForm(widget.NewFormItem("Password length", randomLengthText)),
+		randomLength,
+	)
+
 	pasteShortcut := newShortcutCapture()
 	pasteShortcut.SetPlaceHolder(shortcut.Default())
 
@@ -256,18 +279,22 @@ func newSettingsForm() *settingsForm {
 	status.Wrapping = fyne.TextWrapWord
 
 	return &settingsForm{
-		mode:           widget.NewSelect([]string{modePassphraseLabel, modeRandomLabel}, nil),
-		language:       widget.NewSelect(languageLabels(), nil),
-		minLength:      minLength,
-		maxLength:      maxLength,
-		lowercase:      widget.NewCheck("Lowercase", nil),
-		uppercase:      widget.NewCheck("Uppercase", nil),
-		numbers:        widget.NewCheck("Numbers", nil),
-		special:        widget.NewCheck("Special characters", nil),
-		shortcut:       pasteShortcut,
-		templateSelect: widget.NewSelect(nil, nil),
-		templateName:   templateName,
-		status:         status,
+		mode:                     widget.NewSelect([]string{modePassphraseLabel, modeRandomLabel}, nil),
+		language:                 widget.NewSelect(languageLabels(), nil),
+		minLength:                minLength,
+		maxLength:                maxLength,
+		randomLength:             randomLength,
+		randomLengthText:         randomLengthText,
+		passphraseLengthControls: passphraseLengthControls,
+		randomLengthControls:     randomLengthControls,
+		lowercase:                widget.NewCheck("Lowercase", nil),
+		uppercase:                widget.NewCheck("Uppercase", nil),
+		numbers:                  widget.NewCheck("Numbers", nil),
+		special:                  widget.NewCheck("Special characters", nil),
+		shortcut:                 pasteShortcut,
+		templateSelect:           widget.NewSelect(nil, nil),
+		templateName:             templateName,
+		status:                   status,
 	}
 }
 
@@ -285,6 +312,7 @@ func (f *settingsForm) loadPasswordSettings(settings password.Settings) {
 	f.language.SetSelected(labelForLanguage(settings.Language))
 	f.minLength.SetText(strconv.Itoa(settings.MinLength))
 	f.maxLength.SetText(strconv.Itoa(settings.MaxLength))
+	f.randomLength.SetValue(float64(settings.MaxLength))
 	f.lowercase.SetChecked(settings.Lowercase)
 	f.uppercase.SetChecked(settings.Uppercase)
 	f.numbers.SetChecked(settings.Numbers)
@@ -316,17 +344,23 @@ func (f *settingsForm) passwordSettings() (password.Settings, error) {
 		Special:   f.special.Checked,
 	}
 
-	minLength, err := parseLength("minimum length", f.minLength.Text)
-	if err != nil {
-		return settings, err
-	}
-	settings.MinLength = minLength
+	if settings.Mode == password.ModeRandom {
+		length := sliderLength(f.randomLength.Value)
+		settings.MinLength = length
+		settings.MaxLength = length
+	} else {
+		minLength, err := parseLength("minimum length", f.minLength.Text)
+		if err != nil {
+			return settings, err
+		}
+		settings.MinLength = minLength
 
-	maxLength, err := parseLength("maximum length", f.maxLength.Text)
-	if err != nil {
-		return settings, err
+		maxLength, err := parseLength("maximum length", f.maxLength.Text)
+		if err != nil {
+			return settings, err
+		}
+		settings.MaxLength = maxLength
 	}
-	settings.MaxLength = maxLength
 
 	settings = settings.Normalize()
 	if err := settings.Validate(); err != nil {
@@ -346,9 +380,13 @@ func (f *settingsForm) loadTemplates(templates []password.Template, selected str
 func (f *settingsForm) setModeControlsEnabled(mode password.Mode) {
 	if mode == password.ModeRandom {
 		f.language.Disable()
+		f.passphraseLengthControls.Hide()
+		f.randomLengthControls.Show()
 		return
 	}
 	f.language.Enable()
+	f.randomLengthControls.Hide()
+	f.passphraseLengthControls.Show()
 }
 
 func parseShortcut(value string) (string, error) {
@@ -501,6 +539,24 @@ func parseLength(label, value string) (int, error) {
 		return 0, fmt.Errorf("%s must be a number", label)
 	}
 	return parsed, nil
+}
+
+func sliderLength(value float64) int {
+	length := int(value + 0.5)
+	if length < password.RandomMinAllowedLength {
+		return password.RandomMinAllowedLength
+	}
+	if length > password.MaxAllowedLength {
+		return password.MaxAllowedLength
+	}
+	return length
+}
+
+func characterCountLabel(length int) string {
+	if length == 1 {
+		return "1 character"
+	}
+	return fmt.Sprintf("%d characters", length)
 }
 
 func labelForMode(mode password.Mode) string {
