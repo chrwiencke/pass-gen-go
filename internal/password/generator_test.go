@@ -15,8 +15,8 @@ func TestGenerateShapeLengthCapitalizationAndASCII(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Generate() returned error: %v", err)
 		}
-		if len(pw) < MinLength || len(pw) > MaxLength {
-			t.Fatalf("password %q length is %d, want between %d and %d", pw, len(pw), MinLength, MaxLength)
+		if len(pw) < MinLength {
+			t.Fatalf("password %q length is %d, want at least %d", pw, len(pw), MinLength)
 		}
 		if !pattern.MatchString(pw) {
 			t.Fatalf("password %q does not match Word-WordDigit", pw)
@@ -66,8 +66,8 @@ func TestGenerateSupportedLanguagePassphrases(t *testing.T) {
 				if err != nil {
 					t.Fatalf("GenerateWithSettings() returned error: %v", err)
 				}
-				if len(pw) < settings.MinLength || len(pw) > settings.MaxLength {
-					t.Fatalf("password %q length is %d, want between %d and %d", pw, len(pw), settings.MinLength, settings.MaxLength)
+				if len(pw) < settings.MinLength {
+					t.Fatalf("password %q length is %d, want at least %d", pw, len(pw), settings.MinLength)
 				}
 				if !isPlainASCII(pw) {
 					t.Fatalf("password %q is not plain ASCII", pw)
@@ -82,7 +82,7 @@ func TestGeneratePassphraseHonorsCustomShortLength(t *testing.T) {
 		Mode:      ModePassphrase,
 		Language:  LanguageNorwegian,
 		MinLength: 6,
-		MaxLength: 8,
+		MaxLength: 6,
 		Lowercase: true,
 		Uppercase: false,
 		Numbers:   false,
@@ -90,15 +90,14 @@ func TestGeneratePassphraseHonorsCustomShortLength(t *testing.T) {
 	}
 
 	pw, err := generateWithSettingsWithRand(settings, fixedInts(
-		0,
 		mustWordIndex(t, norwegianWords, "and"),
 		mustWordIndex(t, norwegianWords, "arm"),
 	))
 	if err != nil {
 		t.Fatalf("generateWithSettingsWithRand() returned error: %v", err)
 	}
-	if len(pw) < settings.MinLength || len(pw) > settings.MaxLength {
-		t.Fatalf("password %q length is %d, want between %d and %d", pw, len(pw), settings.MinLength, settings.MaxLength)
+	if len(pw) < settings.MinLength {
+		t.Fatalf("password %q length is %d, want at least %d", pw, len(pw), settings.MinLength)
 	}
 	if pw != strings.ToLower(pw) {
 		t.Fatalf("password %q is not lowercase", pw)
@@ -121,7 +120,6 @@ func TestGenerateEnglishPassphrase(t *testing.T) {
 	}
 
 	pw, err := generateWithSettingsWithRand(settings, fixedInts(
-		0,
 		mustWordIndex(t, englishWords, "apple"),
 		mustWordIndex(t, englishWords, "bridge"),
 	))

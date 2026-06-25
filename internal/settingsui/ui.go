@@ -3,7 +3,6 @@ package settingsui
 import (
 	"fmt"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -36,8 +35,8 @@ type UI struct {
 type settingsForm struct {
 	mode                     *widget.Select
 	language                 *widget.Select
-	minLength                *widget.Entry
-	maxLength                *widget.Entry
+	passphraseLength         *widget.Slider
+	passphraseLengthText     *widget.Label
 	randomLength             *widget.Slider
 	randomLengthText         *widget.Label
 	passphraseLengthControls fyne.CanvasObject
@@ -246,23 +245,25 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 }
 
 func newSettingsForm() *settingsForm {
-	minLength := widget.NewEntry()
-	minLength.SetPlaceHolder(strconv.Itoa(password.MinLength))
-
-	maxLength := widget.NewEntry()
-	maxLength.SetPlaceHolder(strconv.Itoa(password.MaxLength))
+	passphraseLength := widget.NewSlider(float64(password.MinAllowedLength), float64(password.MaxAllowedLength))
+	passphraseLength.Step = 1
+	passphraseLengthText := widget.NewLabel("")
+	passphraseLength.OnChanged = func(value float64) {
+		passphraseLengthText.SetText(characterCountLabel(sliderLength(value, password.MinAllowedLength)))
+	}
+	passphraseLength.SetValue(float64(password.MinLength))
 
 	randomLength := widget.NewSlider(float64(password.RandomMinAllowedLength), float64(password.MaxAllowedLength))
 	randomLength.Step = 1
 	randomLengthText := widget.NewLabel("")
 	randomLength.OnChanged = func(value float64) {
-		randomLengthText.SetText(characterCountLabel(sliderLength(value)))
+		randomLengthText.SetText(characterCountLabel(sliderLength(value, password.RandomMinAllowedLength)))
 	}
 	randomLength.SetValue(float64(password.MaxLength))
 
-	passphraseLengthControls := widget.NewForm(
-		widget.NewFormItem("Minimum length", minLength),
-		widget.NewFormItem("Maximum length", maxLength),
+	passphraseLengthControls := container.NewVBox(
+		widget.NewForm(widget.NewFormItem("Minimum length", passphraseLengthText)),
+		passphraseLength,
 	)
 	randomLengthControls := container.NewVBox(
 		widget.NewForm(widget.NewFormItem("Password length", randomLengthText)),
@@ -281,8 +282,8 @@ func newSettingsForm() *settingsForm {
 	return &settingsForm{
 		mode:                     widget.NewSelect([]string{modePassphraseLabel, modeRandomLabel}, nil),
 		language:                 widget.NewSelect(languageLabels(), nil),
-		minLength:                minLength,
-		maxLength:                maxLength,
+		passphraseLength:         passphraseLength,
+		passphraseLengthText:     passphraseLengthText,
 		randomLength:             randomLength,
 		randomLengthText:         randomLengthText,
 		passphraseLengthControls: passphraseLengthControls,
@@ -310,8 +311,7 @@ func (f *settingsForm) loadPasswordSettings(settings password.Settings) {
 
 	f.mode.SetSelected(labelForMode(settings.Mode))
 	f.language.SetSelected(labelForLanguage(settings.Language))
-	f.minLength.SetText(strconv.Itoa(settings.MinLength))
-	f.maxLength.SetText(strconv.Itoa(settings.MaxLength))
+	f.passphraseLength.SetValue(float64(settings.MinLength))
 	f.randomLength.SetValue(float64(settings.MaxLength))
 	f.lowercase.SetChecked(settings.Lowercase)
 	f.uppercase.SetChecked(settings.Uppercase)
@@ -345,21 +345,12 @@ func (f *settingsForm) passwordSettings() (password.Settings, error) {
 	}
 
 	if settings.Mode == password.ModeRandom {
-		length := sliderLength(f.randomLength.Value)
+		length := sliderLength(f.randomLength.Value, password.RandomMinAllowedLength)
 		settings.MinLength = length
 		settings.MaxLength = length
 	} else {
-		minLength, err := parseLength("minimum length", f.minLength.Text)
-		if err != nil {
-			return settings, err
-		}
-		settings.MinLength = minLength
-
-		maxLength, err := parseLength("maximum length", f.maxLength.Text)
-		if err != nil {
-			return settings, err
-		}
-		settings.MaxLength = maxLength
+		settings.MinLength = sliderLength(f.passphraseLength.Value, password.MinAllowedLength)
+		settings.MaxLength = password.MaxLength
 	}
 
 	settings = settings.Normalize()
@@ -533,18 +524,10 @@ func shortcutKeyName(key fyne.KeyName) string {
 	return ""
 }
 
-func parseLength(label, value string) (int, error) {
-	parsed, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil {
-		return 0, fmt.Errorf("%s must be a number", label)
-	}
-	return parsed, nil
-}
-
-func sliderLength(value float64) int {
+func sliderLength(value float64, minLength int) int {
 	length := int(value + 0.5)
-	if length < password.RandomMinAllowedLength {
-		return password.RandomMinAllowedLength
+	if length < minLength {
+		return minLength
 	}
 	if length > password.MaxAllowedLength {
 		return password.MaxAllowedLength

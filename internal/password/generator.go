@@ -11,7 +11,7 @@ import (
 const (
 	// MinLength is 15 because the password must be over 14 characters long.
 	MinLength = 15
-	// MaxLength is 21 because the password must be under 22 characters long.
+	// MaxLength is the default fixed length for random passwords.
 	MaxLength = 21
 
 	MinAllowedLength       = 4
@@ -120,17 +120,13 @@ func (s Settings) Validate() error {
 	if !isSupportedLanguage(s.Language) {
 		return fmt.Errorf("unsupported passphrase language %q", s.Language)
 	}
-	if s.MaxLength > MaxAllowedLength {
-		return fmt.Errorf("maximum length must be at most %d", MaxAllowedLength)
-	}
-	if s.MinLength > s.MaxLength {
-		return fmt.Errorf("minimum length must be less than or equal to maximum length")
-	}
-
 	switch s.Mode {
 	case ModePassphrase:
 		if s.MinLength < MinAllowedLength {
 			return fmt.Errorf("minimum length must be at least %d", MinAllowedLength)
+		}
+		if s.MinLength > MaxAllowedLength {
+			return fmt.Errorf("minimum length must be at most %d", MaxAllowedLength)
 		}
 		if !s.Lowercase && !s.Uppercase {
 			return fmt.Errorf("passphrases need lowercase, uppercase, or both enabled")
@@ -141,6 +137,12 @@ func (s Settings) Validate() error {
 	case ModeRandom:
 		if s.MinLength < RandomMinAllowedLength {
 			return fmt.Errorf("minimum length must be at least %d", RandomMinAllowedLength)
+		}
+		if s.MaxLength > MaxAllowedLength {
+			return fmt.Errorf("maximum length must be at most %d", MaxAllowedLength)
+		}
+		if s.MinLength > s.MaxLength {
+			return fmt.Errorf("minimum length must be less than or equal to maximum length")
 		}
 		groups := randomCharacterGroups(s)
 		if len(groups) == 0 {
@@ -176,9 +178,8 @@ func LanguageForLabel(label string) (Language, bool) {
 }
 
 // Generate returns a password like Fjell-Ovenfor3.
-// It uses only words in norwegianWords, avoids æ/ø/å, capitalizes the first
-// letter of each word, and retries until the final string is over 14 and under
-// 22 characters long.
+// It uses only words in norwegianWords, avoids æ/ø/å, and capitalizes the
+// first letter of each word.
 func Generate() (string, error) {
 	return generateWithRand(cryptoRandInt)
 }
@@ -206,7 +207,7 @@ func generateWithSettingsWithRand(settings Settings, nextInt RandomIntFunc) (str
 
 func generatePassphraseWithRand(settings Settings, nextInt RandomIntFunc) (string, error) {
 	words := wordsForLanguage(settings.Language)
-	minWords, maxWords, err := passphraseWordCountRange(settings, words)
+	wordCount, err := passphraseWordCount(settings, words)
 	if err != nil {
 		return "", err
 	}
@@ -218,26 +219,7 @@ func generatePassphraseWithRand(settings Settings, nextInt RandomIntFunc) (strin
 		numberLen = 1
 	}
 
-	validWordCounts := make([]int, 0, maxWords-minWords+1)
-	for wordCount := minWords; wordCount <= maxWords; wordCount++ {
-		minWordLengthSum := settings.MinLength - ((wordCount - 1) * separatorLen) - numberLen
-		maxWordLengthSum := settings.MaxLength - ((wordCount - 1) * separatorLen) - numberLen
-		if canMakeWordLengthSum(words, wordCount, minWordLengthSum, maxWordLengthSum) {
-			validWordCounts = append(validWordCounts, wordCount)
-		}
-	}
-	if len(validWordCounts) == 0 {
-		return "", fmt.Errorf("could not generate a passphrase between %d and %d characters", settings.MinLength, settings.MaxLength)
-	}
-
-	wordCountIndex, err := nextInt(len(validWordCounts))
-	if err != nil {
-		return "", err
-	}
-	wordCount := validWordCounts[wordCountIndex]
-
 	minWordLengthSum := settings.MinLength - ((wordCount - 1) * separatorLen) - numberLen
-	maxWordLengthSum := settings.MaxLength - ((wordCount - 1) * separatorLen) - numberLen
 	remainingSums := possibleLengthSums(words, wordCount)
 
 	parts := make([]string, wordCount)
@@ -247,12 +229,12 @@ func generatePassphraseWithRand(settings Settings, nextInt RandomIntFunc) (strin
 		candidates := make([]string, 0, len(words))
 		for _, word := range words {
 			nextUsedLength := usedLength + len(word)
-			if hasLengthSumInRange(remainingSums[remainingWords], minWordLengthSum-nextUsedLength, maxWordLengthSum-nextUsedLength) {
+			if hasLengthSumAtLeast(remainingSums[remainingWords], minWordLengthSum-nextUsedLength) {
 				candidates = append(candidates, word)
 			}
 		}
 		if len(candidates) == 0 {
-			return "", fmt.Errorf("could not generate a passphrase between %d and %d characters", settings.MinLength, settings.MaxLength)
+			return "", fmt.Errorf("could not generate a passphrase at least %d characters long", settings.MinLength)
 		}
 
 		idx, err := nextInt(len(candidates))
@@ -272,15 +254,10 @@ func generatePassphraseWithRand(settings Settings, nextInt RandomIntFunc) (strin
 		}
 		pw += strconv.Itoa(digit)
 	}
-	if len(pw) < settings.MinLength || len(pw) > settings.MaxLength || !isPlainASCII(pw) {
-		return "", fmt.Errorf("could not generate a passphrase between %d and %d characters", settings.MinLength, settings.MaxLength)
+	if len(pw) < settings.MinLength || !isPlainASCII(pw) {
+		return "", fmt.Errorf("could not generate a passphrase at least %d characters long", settings.MinLength)
 	}
 	return pw, nil
-}
-
-func canMakeWordLengthSum(words []string, wordCount, minSum, maxSum int) bool {
-	sums := possibleLengthSums(words, wordCount)
-	return hasLengthSumInRange(sums[wordCount], minSum, maxSum)
 }
 
 func possibleLengthSums(words []string, maxWordCount int) []map[int]bool {
@@ -311,9 +288,9 @@ func uniqueWordLengths(words []string) []int {
 	return lengths
 }
 
-func hasLengthSumInRange(sums map[int]bool, minSum, maxSum int) bool {
+func hasLengthSumAtLeast(sums map[int]bool, minSum int) bool {
 	for sum := range sums {
-		if sum >= minSum && sum <= maxSum {
+		if sum >= minSum {
 			return true
 		}
 	}
@@ -354,39 +331,21 @@ func generateRandomWithRand(settings Settings, nextInt RandomIntFunc) (string, e
 	return string(chars), nil
 }
 
-func passphraseWordCountRange(settings Settings, words []string) (int, int, error) {
-	shortest, longest := wordLengthRange(words)
+func passphraseWordCount(settings Settings, words []string) (int, error) {
+	_, longest := wordLengthRange(words)
 	separatorLen := len(passphraseSeparator(settings))
 	numberLen := 0
 	if settings.Numbers {
 		numberLen = 1
 	}
 
-	maxAllowedWords := 2
-	if settings.MaxLength > MaxLength {
-		maxAllowedWords = 24
+	for wordCount := 2; wordCount <= 24; wordCount++ {
+		if passphraseLengthForWords(wordCount, longest, separatorLen, numberLen) >= settings.MinLength {
+			return wordCount, nil
+		}
 	}
 
-	minWords := 2
-	for minWords < maxAllowedWords && passphraseLengthForWords(minWords, longest, separatorLen, numberLen) < settings.MinLength {
-		minWords++
-	}
-	if passphraseLengthForWords(minWords, longest, separatorLen, numberLen) < settings.MinLength {
-		return 0, 0, fmt.Errorf("settings cannot create a long enough passphrase")
-	}
-
-	maxWords := maxAllowedWords
-	for maxWords >= 2 && passphraseLengthForWords(maxWords, shortest, separatorLen, numberLen) > settings.MaxLength {
-		maxWords--
-	}
-	if maxWords < 2 {
-		return 0, 0, fmt.Errorf("settings cannot create a short enough passphrase")
-	}
-	if minWords > maxWords {
-		return 0, 0, fmt.Errorf("settings cannot create a passphrase between %d and %d characters", settings.MinLength, settings.MaxLength)
-	}
-
-	return minWords, maxWords, nil
+	return 0, fmt.Errorf("settings cannot create a long enough passphrase")
 }
 
 func passphraseLengthForWords(wordCount, wordLength, separatorLen, numberLen int) int {
