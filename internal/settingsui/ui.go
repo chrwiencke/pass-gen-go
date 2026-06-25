@@ -26,6 +26,7 @@ type UI struct {
 	app     fyne.App
 	manager *appsettings.Manager
 	onSave  func()
+	version string
 
 	mu     sync.Mutex
 	window fyne.Window
@@ -52,11 +53,17 @@ type settingsForm struct {
 	status                   *widget.Label
 }
 
-func New(app fyne.App, manager *appsettings.Manager, onSave func()) *UI {
+func New(app fyne.App, manager *appsettings.Manager, onSave func(), appVersion ...string) *UI {
+	version := "dev"
+	if len(appVersion) > 0 && strings.TrimSpace(appVersion[0]) != "" {
+		version = strings.TrimSpace(appVersion[0])
+	}
+
 	return &UI{
 		app:     app,
 		manager: manager,
 		onSave:  onSave,
+		version: version,
 	}
 }
 
@@ -215,7 +222,13 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 		widget.NewCard("Paste shortcut", "Press the key combination to capture it.", widget.NewForm(
 			widget.NewFormItem("Generate and paste", form.shortcut),
 		)),
-		widget.NewCard("Updates", "Allow GoPass to check for new releases in the background.", widget.NewForm(
+	)
+
+	updatesTab := container.NewVBox(
+		widget.NewCard("Version", "", widget.NewForm(
+			widget.NewFormItem("Current version", widget.NewLabel(u.version)),
+		)),
+		widget.NewCard("Automatic updates", "Allow GoPass to check for new releases in the background.", widget.NewForm(
 			widget.NewFormItem("Automatic updates", form.automaticUpdates),
 		)),
 	)
@@ -233,6 +246,7 @@ func (u *UI) buildWindow() (fyne.Window, *settingsForm) {
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Generator", generatorTab),
 		container.NewTabItem("Shortcut", shortcutTab),
+		container.NewTabItem("Updates", updatesTab),
 		container.NewTabItem("Templates", templatesTab),
 	)
 	tabs.SetTabLocation(container.TabLocationTop)
