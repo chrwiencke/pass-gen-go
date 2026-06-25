@@ -1,2 +1,4 @@
 /dist/
 /.vscode/
+/cmd/gopass/gopass.ico
+/cmd/gopass/resource_windows_*.syso

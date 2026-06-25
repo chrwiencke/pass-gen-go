@@ -8,9 +8,15 @@ set -euo pipefail
 ARCH="${GOARCH:-amd64}"
 VERSION="${VERSION:-1.0.0}"
 if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
+  if ! command -v x86_64-w64-mingw32-windres >/dev/null 2>&1; then
+    echo "Skipped Windows build: x86_64-w64-mingw32-windres was not found, so the Windows exe icon cannot be embedded."
+    exit 0
+  fi
   mkdir -p "dist/windows-${ARCH}"
   ASSET_NAME="gopass-windows-${ARCH}.exe"
   ASSET_PATH="dist/windows-${ARCH}/${ASSET_NAME}"
+  go run ./scripts/gen-windows-icon.go -out ./cmd/gopass/gopass.ico
+  x86_64-w64-mingw32-windres -O coff -i ./cmd/gopass/gopass.rc -o "./cmd/gopass/resource_windows_${ARCH}.syso"
   CGO_ENABLED=1 GOOS=windows GOARCH="${ARCH}" CC=x86_64-w64-mingw32-gcc \
     go build -trimpath -ldflags="-H=windowsgui -s -w -X main.version=${VERSION}" \
     -o "${ASSET_PATH}" ./cmd/gopass
