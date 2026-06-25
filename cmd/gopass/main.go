@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopass/internal/accessibility"
 	"gopass/internal/clipboard"
 	"gopass/internal/hotkey"
 	"gopass/internal/password"
@@ -49,6 +50,10 @@ var templateMenuItems []*systray.MenuItem
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	if !accessibility.RequestPermission() {
+		log.Printf("macOS Accessibility permission is not granted yet")
+	}
 
 	enforceMenuBarOnly()
 	guiApp = fyneapp.NewWithID("local.gopass.tray")

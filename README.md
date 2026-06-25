@@ -29,6 +29,7 @@ The tray menu also has a `Settings...` item. It opens a native Fyne settings win
 The default paste shortcut is `Ctrl+Command+P` on macOS and `Ctrl+Windows+P` on Windows. Settings and templates are saved as JSON in the user's OS config directory and are loaded again the next time GoPass starts. Passphrase words are stored as plain ASCII; accents are removed where needed so generated passwords stay compatible with strict password fields.
 
 On macOS, GoPass may need Accessibility permission before it can paste into another app.
+GoPass asks macOS to show the Accessibility permission prompt on launch when that permission has not been granted yet.
 
 ## Important note about “one app”
 
@@ -92,6 +93,23 @@ Set `VERSION` when building a release:
 VERSION=1.2.3 ./scripts/build-macos.sh
 ```
 
+## Build a macOS installer DMG
+
+From macOS:
+
+```bash
+./scripts/build-macos-dmg.sh
+```
+
+Output:
+
+```text
+dist/GoPass-macos-<arch>.dmg
+dist/GoPass-macos-<arch>.dmg.sha256
+```
+
+The DMG contains `GoPass.app` and an `Applications` symlink, so users can install by dragging GoPass into Applications.
+
 ## Build for Windows
 
 From PowerShell:
@@ -129,6 +147,29 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -tags ci ./cmd/gopass
 
 Do not use that `ci` tag for release builds.
 
+## Build a Windows MSI installer
+
+Install the WiX Toolset CLI once:
+
+```powershell
+dotnet tool install --global wix
+```
+
+Then build the MSI from PowerShell:
+
+```powershell
+./scripts/build-windows-msi.ps1
+```
+
+Output:
+
+```text
+dist/GoPass-windows-amd64.msi
+dist/GoPass-windows-amd64.msi.sha256
+```
+
+The MSI installs `gopass.exe` under Program Files and adds a Start menu shortcut.
+
 ## Build both from macOS/Linux shell
 
 ```bash
@@ -165,6 +206,14 @@ It can also use the zipped installer assets produced by GitHub Actions. On macOS
 GoPass-macos-amd64.zip
 GoPass-macos-arm64.zip
 GoPass-windows-amd64.zip
+```
+
+The GitHub release also includes first-install assets for users:
+
+```text
+GoPass-macos-amd64.dmg
+GoPass-macos-arm64.dmg
+GoPass-windows-amd64.msi
 ```
 
 Upload the matching `.sha256` file next to each raw binary asset for checksum verification. After the user right-clicks the tray/menu-bar icon and clicks `Update`, the app downloads the release asset, applies it, and restarts automatically so the new version is used.

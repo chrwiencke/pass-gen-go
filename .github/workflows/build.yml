@@ -110,12 +110,21 @@ jobs:
             "dist/macos-${{ matrix.arch }}/GoPass.app" \
             "dist/GoPass-macos-${{ matrix.arch }}.zip"
 
+      - name: Build drag-and-drop DMG
+        env:
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          chmod +x scripts/build-macos-dmg.sh
+          ./scripts/build-macos-dmg.sh
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v6
         with:
           name: GoPass-macos-${{ matrix.arch }}
           path: |
             dist/GoPass-macos-${{ matrix.arch }}.zip
+            dist/GoPass-macos-${{ matrix.arch }}.dmg
+            dist/GoPass-macos-${{ matrix.arch }}.dmg.sha256
             dist/macos-${{ matrix.arch }}/gopass-darwin-${{ matrix.arch }}
             dist/macos-${{ matrix.arch }}/gopass-darwin-${{ matrix.arch }}.sha256
           if-no-files-found: error
@@ -158,12 +167,24 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path dist/windows-amd64/gopass.exe -DestinationPath dist/GoPass-windows-amd64.zip -Force
 
+      - name: Install WiX Toolset
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build Windows MSI
+        shell: pwsh
+        run: ./scripts/build-windows-msi.ps1
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v6
         with:
           name: GoPass-windows-amd64
           path: |
             dist/GoPass-windows-amd64.zip
+            dist/GoPass-windows-amd64.msi
+            dist/GoPass-windows-amd64.msi.sha256
             dist/windows-amd64/gopass-windows-amd64.exe
             dist/windows-amd64/gopass-windows-amd64.exe.sha256
           if-no-files-found: error
